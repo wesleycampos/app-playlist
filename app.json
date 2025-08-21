@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "sucesso-fm",
+    "slug": "sucesso-fm",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.wesleykennedy.sucessofm"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "9e9ca65e-1cd5-4ec6-99c3-0f47f7a04de0"
+      }
+    },
+    "plugins": [
+      "expo-web-browser"
+    ]
+  }
+}
