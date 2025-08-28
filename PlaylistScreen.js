@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Player from './PlayerService';
 
 const PLAYLIST_URL = 'https://musicas.wkdesign.com.br/playlist.php';
 
@@ -23,11 +24,25 @@ export default function PlaylistScreen({ navigation, route }) {
   const [isPlaying, setIsPlaying] = useState(route.params?.isPlaying || false);
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [genreIndex, setGenreIndex] = useState(0);
+  const [status, setStatus] = useState('idle'); // idle | connecting | playing | paused | error
   const chipsRef = useRef(null);
+
+  // Callback para reproduzir música selecionada
+  const onSelect = route.params?.onSelect;
 
   useEffect(() => {
     fetchPlaylist();
   }, []);
+
+  // Atualiza o estado quando os parâmetros da rota mudam
+  useEffect(() => {
+    if (route.params?.currentTrack) {
+      setCurrentTrack(route.params.currentTrack);
+    }
+    if (route.params?.isPlaying !== undefined) {
+      setIsPlaying(route.params.isPlaying);
+    }
+  }, [route.params?.currentTrack, route.params?.isPlaying]);
 
   const fetchPlaylist = async () => {
     try {
@@ -49,6 +64,72 @@ export default function PlaylistScreen({ navigation, route }) {
     const copy = new Set(selectedKeys);
     if (copy.has(key)) copy.delete(key); else copy.add(key);
     setSelectedKeys(copy);
+    
+    // Se a música foi selecionada e não é a atual, reproduz automaticamente
+    if (copy.has(key) && (!currentTrack || currentTrack.id !== track.id)) {
+      playTrack(track);
+    }
+  };
+
+  // Função para reproduzir uma música individual
+  const playTrack = async (track) => {
+    if (!track) return;
+    
+    setCurrentTrack(track);
+    setIsPlaying(true);
+    setStatus('connecting');
+    
+    try {
+      await Player.play(track.url, (playbackStatus) => {
+        if (!playbackStatus || !playbackStatus.isLoaded) return;
+        
+        if (playbackStatus.didJustFinish) {
+          setIsPlaying(false);
+          setStatus('idle');
+          return;
+        }
+        
+        if (playbackStatus.isBuffering) {
+          setStatus('connecting');
+          return;
+        }
+        
+        if (playbackStatus.isPlaying) {
+          setStatus('playing');
+          setIsPlaying(true);
+        } else {
+          setStatus('paused');
+          setIsPlaying(false);
+        }
+      });
+    } catch (error) {
+      console.warn('Erro ao reproduzir música:', error);
+      setStatus('error');
+      setIsPlaying(false);
+    }
+  };
+
+  // Função para pausar/retomar reprodução
+  const togglePlayPause = async () => {
+    if (!currentTrack) return;
+    
+    if (isPlaying) {
+      await Player.pause();
+      setIsPlaying(false);
+      setStatus('paused');
+    } else {
+      await Player.resume((playbackStatus) => {
+        if (!playbackStatus || !playbackStatus.isLoaded) return;
+        
+        if (playbackStatus.isPlaying) {
+          setStatus('playing');
+          setIsPlaying(true);
+        } else {
+          setStatus('paused');
+          setIsPlaying(false);
+        }
+      });
+    }
   };
 
   const selectedCount = selectedKeys.size;
@@ -89,6 +170,7 @@ export default function PlaylistScreen({ navigation, route }) {
       <Pressable
         style={[styles.trackItem, selected && styles.selectedTrackItem]}
         onPress={() => toggleSelect(item, index)}
+        onLongPress={() => playTrack(item)} // Reproduz ao pressionar longo
       >
         <View style={styles.trackInfo}>
           <View style={[styles.checkCircle, selected && styles.checkCircleOn]}>
@@ -106,11 +188,29 @@ export default function PlaylistScreen({ navigation, route }) {
         </View>
 
         <View style={styles.trackActions}>
-          {isCurrentTrack && isPlaying && (
-            <View style={styles.playingIndicator}>
-              <MaterialIcons name="volume-up" size={16} color="#0A2A54" />
+          {isCurrentTrack && (
+            <View style={[styles.playingIndicator, isPlaying && styles.playingIndicatorActive]}>
+              <MaterialIcons 
+                name={isPlaying ? 'volume-up' : 'volume-off'} 
+                size={16} 
+                color={isPlaying ? '#0A2A54' : '#8fa2b5'} 
+              />
             </View>
           )}
+          
+          {/* Botão de play rápido */}
+          <TouchableOpacity
+            style={styles.quickPlayButton}
+            onPress={() => playTrack(item)}
+            disabled={status === 'connecting'}
+          >
+            <MaterialIcons 
+              name="play-arrow" 
+              size={18} 
+              color={isCurrentTrack && isPlaying ? '#0A2A54' : '#8fa2b5'} 
+            />
+          </TouchableOpacity>
+          
           <MaterialIcons
             name={selected ? 'check-circle' : 'radio-button-unchecked'}
             size={22}
@@ -131,6 +231,12 @@ export default function PlaylistScreen({ navigation, route }) {
     } catch {}
   };
 
+  // Limpa o player quando a tela é desmontada
+  useEffect(() => {
+    return () => {
+      // Não para o player se estiver reproduzindo, apenas limpa o callback
+    };
+  }, []);
 
 
   return (
@@ -167,17 +273,20 @@ export default function PlaylistScreen({ navigation, route }) {
               <Text style={styles.nowPlayingArtist} numberOfLines={1}>
                 {currentTrack.artist}
               </Text>
+              {status === 'connecting' && (
+                <Text style={styles.statusText}>Conectando...</Text>
+              )}
             </View>
             <TouchableOpacity
-              style={styles.playButton}
-              onPress={() =>
-                navigation.navigate('Main', {
-                  selectedTrack: currentTrack,
-                  shouldPlay: !isPlaying,
-                })
-              }
+              style={[styles.playButton, status === 'connecting' && styles.playButtonDisabled]}
+              onPress={togglePlayPause}
+              disabled={status === 'connecting'}
             >
-              <MaterialIcons name={isPlaying ? 'pause' : 'play-arrow'} size={24} color="#fff" />
+              {status === 'connecting' ? (
+                <MaterialIcons name="hourglass-empty" size={24} color="#fff" />
+              ) : (
+                <MaterialIcons name={isPlaying ? 'pause' : 'play-arrow'} size={24} color="#fff" />
+              )}
             </TouchableOpacity>
           </View>
         )}
@@ -289,6 +398,7 @@ const styles = StyleSheet.create({
   playerInfo: { flex: 1 },
   nowPlayingTitle: { fontSize: 16, fontWeight: '800', color: '#0A2A54', marginBottom: 4 },
   nowPlayingArtist: { fontSize: 14, color: '#8fa2b5' },
+  statusText: { fontSize: 12, color: '#8fa2b5', marginTop: 2, fontStyle: 'italic' },
   playButton: {
     backgroundColor: '#0A2A54',
     width: 48,
@@ -296,6 +406,9 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  playButtonDisabled: {
+    backgroundColor: '#8fa2b5',
   },
 
   // Seções
@@ -347,6 +460,13 @@ const styles = StyleSheet.create({
   playingIndicator: {
     width: 24, height: 24, borderRadius: 12, backgroundColor: '#e8f4fd',
     alignItems: 'center', justifyContent: 'center',
+  },
+  playingIndicatorActive: {
+    backgroundColor: '#d4edda',
+  },
+  quickPlayButton: {
+    padding: 4,
+    marginRight: 8,
   },
 
   footerBox: { paddingTop: 6, paddingBottom: 20 },
