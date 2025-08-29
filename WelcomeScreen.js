@@ -41,8 +41,16 @@ export default function WelcomeScreen({ navigation }) {
             </Pressable>
           </View>
 
-          {/* Políticas de Privacidade */}
-          <Text style={styles.privacyText}>Politicas e Privacidade</Text>
+          {/* Links para Termos e Políticas */}
+          <View style={styles.linksContainer}>
+            <Pressable onPress={() => navigation.navigate('TermsOfService')}>
+              <Text style={styles.linkText}>Termos de Serviço</Text>
+            </Pressable>
+            <Text style={styles.separator}>•</Text>
+            <Pressable onPress={() => navigation.navigate('PrivacyPolicy')}>
+              <Text style={styles.linkText}>Políticas de Privacidade</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     </LinearGradient>
@@ -139,9 +147,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  privacyText: {
-    color: '#8fa2b5',
+  linksContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  linkText: {
+    color: '#0A2A54',
     fontSize: 14,
-    textAlign: 'center',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  separator: {
+    color: '#8fa2b5',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

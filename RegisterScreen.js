@@ -11,6 +11,7 @@ export default function RegisterScreen({ navigation, onRegister }) {
   const [city, setCity] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [acceptedPrivacyPolicy, setAcceptedPrivacyPolicy] = useState(false);
 
   const handleRegisterPress = () => {
     if (!name || !email || !password || !confirmPassword) {
@@ -19,6 +20,10 @@ export default function RegisterScreen({ navigation, onRegister }) {
     }
     if (password !== confirmPassword) {
       Alert.alert('Ops', 'As senhas não coincidem.');
+      return;
+    }
+    if (!acceptedPrivacyPolicy) {
+      Alert.alert('Atenção', 'Você deve aceitar as Políticas de Privacidade para continuar.');
       return;
     }
     const ok = onRegister(name, email, password);
@@ -104,11 +109,35 @@ export default function RegisterScreen({ navigation, onRegister }) {
               {/* Termos e Política */}
               <View style={styles.termsSection}>
                 <View style={styles.checkboxRow}>
-                  <MaterialIcons name="check-box" size={20} color="#0A2A54" />
-                  <Text style={styles.termsText}>
-                    Ao marcar esta opção, você confirma que aceita nossos{' '}
-                    <Text style={styles.underlinedText}>Termos e Política de Privacidade</Text>.
-                  </Text>
+                  <Pressable 
+                    onPress={() => setAcceptedPrivacyPolicy(!acceptedPrivacyPolicy)}
+                    style={styles.checkboxContainer}
+                  >
+                    <MaterialIcons 
+                      name={acceptedPrivacyPolicy ? "check-box" : "check-box-outline-blank"} 
+                      size={24} 
+                      color={acceptedPrivacyPolicy ? "#0A2A54" : "#8fa2b5"} 
+                    />
+                  </Pressable>
+                  <View style={styles.termsTextContainer}>
+                    <Text style={styles.termsText}>
+                      Ao marcar esta opção, você confirma que aceita nossos{' '}
+                      <Text 
+                        style={styles.underlinedText}
+                        onPress={() => navigation.navigate('TermsOfService')}
+                      >
+                        Termos de Serviço
+                      </Text>
+                      {' '}e{' '}
+                      <Text 
+                        style={styles.underlinedText}
+                        onPress={() => navigation.navigate('PrivacyPolicy')}
+                      >
+                        Política de Privacidade
+                      </Text>
+                      .
+                    </Text>
+                  </View>
                 </View>
               </View>
 
@@ -211,13 +240,19 @@ const styles = StyleSheet.create({
   checkboxRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
+    gap: 12,
+  },
+  checkboxContainer: {
+    padding: 4,
+    marginTop: 2,
+  },
+  termsTextContainer: {
+    flex: 1,
   },
   termsText: { 
     color: '#8fa2b5', 
     fontSize: 14,
     lineHeight: 20,
-    flex: 1
   },
   underlinedText: { 
     textDecorationLine: 'underline',

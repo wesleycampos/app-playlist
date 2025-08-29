@@ -14,9 +14,9 @@ import * as Player from './PlayerService';
 const PLAYLIST_URL = 'https://musicas.wkdesign.com.br/playlist.php';
 
 const LINKS = {
-  sucesso: 'https://radiosucessobrasilia.com.br/',
-  rcplay: 'https://www.youtube.com/@rcplaytv',
-  portalrc: 'https://portalrc.com.br/',
+  sucesso: 'SucessoFMWebView',
+  rcplay: 'RCPlayTVWebView',
+  portalrc: 'PortalRCNewsWebView',
 };
 
 // ---------- abrir link (in-app + fallback) ----------
@@ -25,20 +25,6 @@ const normalizeUrl = (url) => {
   const trimmed = url.trim();
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 };
-async function openLink(url) {
-  const safe = normalizeUrl(url);
-  try {
-    await WebBrowser.openBrowserAsync(safe, {
-      enableBarCollapsing: true,
-      showTitle: true,
-      dismissButtonStyle: 'done',
-      presentationStyle: 'automatic',
-    });
-    return;
-  } catch {}
-  try { await Linking.openURL(safe); }
-  catch { Alert.alert('Atenção', 'Não foi possível abrir este link no dispositivo.'); }
-}
 // ----------------------------------------------------
 
 export default function MainScreen({ navigation, route }) {
@@ -145,6 +131,33 @@ export default function MainScreen({ navigation, route }) {
 
   useEffect(() => () => { Player.stop(); }, []);
 
+  // Função para abrir links (portais internos ou externos)
+  const openLink = async (url) => {
+    console.log('🔗 Tentando abrir link:', url);
+    
+    // Se for um portal interno, navega para a tela correspondente
+    if (url === 'SucessoFMWebView' || url === 'RCPlayTVWebView' || url === 'PortalRCNewsWebView') {
+      console.log('📍 Navegando para portal interno:', url);
+      navigation.navigate(url);
+      return;
+    }
+    
+    // Para links externos, usa o comportamento padrão
+    console.log('🌐 Abrindo link externo:', url);
+    const safe = normalizeUrl(url);
+    try {
+      await WebBrowser.openBrowserAsync(safe, {
+        enableBarCollapsing: true,
+        showTitle: true,
+        dismissButtonStyle: 'done',
+        presentationStyle: 'automatic',
+      });
+      return;
+    } catch {}
+    try { await Linking.openURL(safe); }
+    catch { Alert.alert('Atenção', 'Não foi possível abrir este link no dispositivo.'); }
+  };
+
   // Paleta por tema
   const C = {
     gradient: dark ? ['#0b1220', '#0f172a', '#0b1220'] : ['#ffffff', '#f2f5fb', '#e9edf4'],
@@ -157,7 +170,10 @@ export default function MainScreen({ navigation, route }) {
 
   const PortalButton = ({ label, image, url }) => (
     <Pressable
-      onPress={() => openLink(url)}
+      onPress={() => {
+        console.log('🖱️ PortalButton clicado:', label, 'URL:', url);
+        openLink(url);
+      }}
       style={({ pressed }) => [styles.portalItem, { backgroundColor: C.card, elevation: C.shadow }, pressed && { transform: [{ scale: 0.98 }] }]}
       android_ripple={{ color: dark ? '#1f2937' : '#e6eef8' }}
     >

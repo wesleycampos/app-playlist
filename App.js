@@ -5,6 +5,11 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import WelcomeScreen from './WelcomeScreen';
 import LoginScreen from './LoginScreen';
 import RegisterScreen from './RegisterScreen';
+import PrivacyPolicyScreen from './PrivacyPolicyScreen';
+import TermsOfServiceScreen from './TermsOfServiceScreen';
+import SucessoFMWebView from './SucessoFMWebView';
+import RCPlayTVWebView from './RCPlayTVWebView';
+import PortalRCNewsWebView from './PortalRCNewsWebView';
 import MainScreen from './MainScreen';
 import PlaylistScreen from './PlaylistScreen';
 import MenuScreen from './MenuScreen';
@@ -43,6 +48,9 @@ export default function App() {
             <Stack.Screen name="Menu">
               {props => <MenuScreen {...props} onLogout={handleLogout} />}
             </Stack.Screen>
+            <Stack.Screen name="SucessoFMWebView" component={SucessoFMWebView} />
+            <Stack.Screen name="RCPlayTVWebView" component={RCPlayTVWebView} />
+            <Stack.Screen name="PortalRCNewsWebView" component={PortalRCNewsWebView} />
           </>
         ) : (
           <>
@@ -53,6 +61,8 @@ export default function App() {
             <Stack.Screen name="Register">
               {props => <RegisterScreen {...props} onRegister={handleRegister} />}
             </Stack.Screen>
+            <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
+            <Stack.Screen name="TermsOfService" component={TermsOfServiceScreen} />
           </>
         )}
       </Stack.Navigator>

@@ -62,10 +62,9 @@ export default function LoginScreen({ navigation, onLogin }) {
 
                 {/* Políticas de Privacidade */}
                 <View style={styles.privacySection}>
-                  <View style={styles.checkboxRow}>
-                    <MaterialIcons name="check-box" size={20} color="#0A2A54" />
-                    <Text style={styles.privacyText}>Politicas de privacidade</Text>
-                  </View>
+                  <Pressable onPress={() => navigation.navigate('PrivacyPolicy')}>
+                    <Text style={styles.privacyText}>Políticas de Privacidade</Text>
+                  </Pressable>
                   <Pressable onPress={() => navigation.navigate('Register')}>
                     <Text style={styles.registerLink}>Cadastre-se aqui!</Text>
                   </Pressable>
