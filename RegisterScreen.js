@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, Pressable, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Pressable, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
+import { auth, users } from './supabase';
 
 export default function RegisterScreen({ navigation, onRegister }) {
   const [name, setName] = useState('');
@@ -12,8 +13,9 @@ export default function RegisterScreen({ navigation, onRegister }) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [acceptedPrivacyPolicy, setAcceptedPrivacyPolicy] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleRegisterPress = () => {
+  const handleRegisterPress = async () => {
     if (!name || !email || !password || !confirmPassword) {
       Alert.alert('Ops', 'Preencha os campos obrigatórios.');
       return;
@@ -26,12 +28,45 @@ export default function RegisterScreen({ navigation, onRegister }) {
       Alert.alert('Atenção', 'Você deve aceitar as Políticas de Privacidade para continuar.');
       return;
     }
-    const ok = onRegister(name, email, password);
-    if (ok) {
-      Alert.alert('Sucesso', 'Cadastro criado. Faça login!');
-      navigation.goBack();
-    } else {
-      Alert.alert('Erro', 'Não foi possível cadastrar agora.');
+    if (password.length < 6) {
+      Alert.alert('Atenção', 'A senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
+
+    setIsLoading(true);
+    
+    try {
+      console.log('👤 Tentando criar usuário:', email);
+      
+      // Criar usuário no Supabase
+      const result = await auth.signUp(email, password, {
+        full_name: name,
+        phone: phone,
+        uf: uf.toUpperCase(),
+        city: city
+      });
+      
+      if (result.success) {
+        console.log('✅ Usuário criado com sucesso!');
+        Alert.alert(
+          'Sucesso!', 
+          'Cadastro criado com sucesso! Verifique seu email para confirmar a conta.',
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.goBack()
+            }
+          ]
+        );
+      } else {
+        console.error('❌ Erro no cadastro:', result.error);
+        Alert.alert('Erro', result.error || 'Não foi possível cadastrar agora.');
+      }
+    } catch (error) {
+      console.error('❌ Erro inesperado no cadastro:', error);
+      Alert.alert('Erro', 'Erro inesperado. Tente novamente.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -102,8 +137,16 @@ export default function RegisterScreen({ navigation, onRegister }) {
                 onChangeText={setConfirmPassword} 
               />
 
-              <Pressable style={styles.primaryBtn} onPress={handleRegisterPress}>
-                <Text style={styles.primaryText}>CADASTRAR</Text>
+              <Pressable 
+                style={[styles.primaryBtn, isLoading && styles.primaryBtnDisabled]} 
+                onPress={handleRegisterPress}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.primaryText}>CADASTRAR</Text>
+                )}
               </Pressable>
 
               {/* Termos e Política */}
@@ -233,6 +276,10 @@ const styles = StyleSheet.create({
     fontWeight: '800', 
     letterSpacing: 0.4,
     fontSize: 16
+  },
+  primaryBtnDisabled: {
+    backgroundColor: '#8fa2b5',
+    opacity: 0.7,
   },
   termsSection: {
     marginBottom: 24,

@@ -1,18 +1,40 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, TextInput, Pressable, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Image, TextInput, Pressable, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
+import { auth } from './supabase';
 
 export default function LoginScreen({ navigation, onLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLoginPress = () => {
-    const ok = onLogin(email, password);
-    if (ok) {
-      Alert.alert('Sucesso', 'Login realizado!');
-    } else {
-      Alert.alert('Erro', 'E-mail ou senha inválidos.');
+  const handleLoginPress = async () => {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Erro', 'Por favor, preencha todos os campos.');
+      return;
+    }
+
+    setIsLoading(true);
+    
+    try {
+      console.log('🔐 Tentando fazer login com:', email);
+      
+      const result = await auth.signIn(email, password);
+      
+      if (result.success) {
+        console.log('✅ Login realizado com sucesso!');
+        Alert.alert('Sucesso', 'Login realizado com sucesso!');
+        onLogin(email, password); // Chama a função do App.js
+      } else {
+        console.error('❌ Erro no login:', result.error);
+        Alert.alert('Erro', result.error || 'E-mail ou senha inválidos.');
+      }
+    } catch (error) {
+      console.error('❌ Erro inesperado no login:', error);
+      Alert.alert('Erro', 'Erro inesperado. Tente novamente.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -56,8 +78,16 @@ export default function LoginScreen({ navigation, onLogin }) {
                   onChangeText={setPassword}
                 />
 
-                <Pressable style={styles.primaryBtn} onPress={handleLoginPress}>
-                  <Text style={styles.primaryText}>ENTRAR</Text>
+                <Pressable 
+                  style={[styles.primaryBtn, isLoading && styles.primaryBtnDisabled]} 
+                  onPress={handleLoginPress}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <Text style={styles.primaryText}>ENTRAR</Text>
+                  )}
                 </Pressable>
 
                 {/* Políticas de Privacidade */}
@@ -165,6 +195,10 @@ const styles = StyleSheet.create({
     fontWeight: '800', 
     letterSpacing: 0.4,
     fontSize: 16
+  },
+  primaryBtnDisabled: {
+    backgroundColor: '#8fa2b5',
+    opacity: 0.7,
   },
   privacySection: {
     alignItems: 'center',

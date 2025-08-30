@@ -65,13 +65,37 @@ export default function App() {
     initializeApp();
   }, []);
 
-  // Login fictício (conforme solicitado)
-  const handleLogin = (email, password) => {
-    if (email?.trim().toLowerCase() === 'usuario@teste.com' && password === '123456') {
-      setIsLoggedIn(true);
-      return true;
+  // Login real com Supabase
+  const handleLogin = async (email, password) => {
+    try {
+      console.log('🔐 App.js: Tentando login com Supabase');
+      
+      // Verificar se o usuário existe no Supabase
+      const { data: { user }, error } = await supabase.auth.getUser();
+      
+      if (error) {
+        console.log('ℹ️  Nenhum usuário logado ainda');
+      } else if (user) {
+        console.log('✅ Usuário já logado:', user.email);
+        setIsLoggedIn(true);
+        return true;
+      }
+      
+      // Se não estiver logado, tentar fazer login
+      const result = await auth.signIn(email, password);
+      
+      if (result.success) {
+        console.log('✅ Login realizado com sucesso no App.js');
+        setIsLoggedIn(true);
+        return true;
+      } else {
+        console.error('❌ Falha no login:', result.error);
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Erro no login do App.js:', error);
+      return false;
     }
-    return false;
   };
 
   // Cadastro fictício (mock)
@@ -80,8 +104,25 @@ export default function App() {
     return true;
   };
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
+  const handleLogout = async () => {
+    try {
+      console.log('🚪 App.js: Fazendo logout');
+      
+      const result = await auth.signOut();
+      
+      if (result.success) {
+        console.log('✅ Logout realizado com sucesso');
+        setIsLoggedIn(false);
+      } else {
+        console.error('❌ Erro no logout:', result.error);
+        // Mesmo com erro, vamos fazer logout local
+        setIsLoggedIn(false);
+      }
+    } catch (error) {
+      console.error('❌ Erro inesperado no logout:', error);
+      // Mesmo com erro, vamos fazer logout local
+      setIsLoggedIn(false);
+    }
   };
 
   // Tela de loading e status
