@@ -18,6 +18,7 @@ import MenuScreen from './MenuScreen';
 // Importar configurações e testes do Supabase
 import { validateConfig } from './config';
 import runAllTests from './testConnection';
+import { quickTest, testAuth } from './quickTest';
 
 const Stack = createNativeStackNavigator();
 
@@ -138,6 +139,16 @@ export default function App() {
           {supabaseStatus === 'connected' && '✅ Conectando ao banco...'}
           {supabaseStatus === 'error' && '❌ Erro na inicialização'}
         </Text>
+        
+        {/* Botões de teste para debug */}
+        <View style={styles.testButtons}>
+          <Pressable style={styles.testButton} onPress={quickTest}>
+            <Text style={styles.testButtonText}>🧪 Teste Rápido</Text>
+          </Pressable>
+          <Pressable style={styles.testButton} onPress={testAuth}>
+            <Text style={styles.testButtonText}>🔐 Teste Auth</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -195,5 +206,21 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 10,
     textAlign: 'center',
+  },
+  testButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 20,
+  },
+  testButton: {
+    backgroundColor: '#0A2A54',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  testButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
