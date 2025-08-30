@@ -4,9 +4,9 @@
 
 // Configurações do Supabase
 export const SUPABASE_CONFIG = {
-  // Substitua pelas suas credenciais reais
-  url: process.env.EXPO_PUBLIC_SUPABASE_URL || 'SUA_URL_DO_SUPABASE_AQUI',
-  anonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'SUA_CHAVE_ANONIMA_DO_SUPABASE_AQUI',
+  // Credenciais reais do projeto Supabase
+  url: 'https://dpmziugnkljtheeueqzj.supabase.co',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRwbXppdWdua2xqdGhlZXVlcXpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU3MTg1MTYsImV4cCI6MjA3MTI5NDUxNn0.kwKTjb0kXTX2THxalTZgSDl2gpL57wCk-6DBvUmYUNE',
 };
 
 // Configurações da API externa

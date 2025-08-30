@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 
 import WelcomeScreen from './WelcomeScreen';
 import LoginScreen from './LoginScreen';
@@ -14,10 +15,55 @@ import MainScreen from './MainScreen';
 import PlaylistScreen from './PlaylistScreen';
 import MenuScreen from './MenuScreen';
 
+// Importar configurações e testes do Supabase
+import { validateConfig } from './config';
+import runAllTests from './testConnection';
+
 const Stack = createNativeStackNavigator();
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [supabaseStatus, setSupabaseStatus] = useState('checking');
+
+  // Validar configurações e testar conexão ao iniciar
+  useEffect(() => {
+    const initializeApp = async () => {
+      try {
+        console.log('🚀 Inicializando aplicativo Sucesso FM...');
+        
+        // Validar configurações
+        const configValid = validateConfig();
+        if (!configValid) {
+          console.error('❌ Configurações inválidas');
+          setSupabaseStatus('config_error');
+          setIsLoading(false);
+          return;
+        }
+        
+        console.log('✅ Configurações válidas, testando conexão...');
+        
+        // Testar conexão com Supabase
+        const testResults = await runAllTests();
+        
+        if (testResults.connection.success) {
+          console.log('🎉 Supabase conectado com sucesso!');
+          setSupabaseStatus('connected');
+        } else {
+          console.error('❌ Falha na conexão com Supabase');
+          setSupabaseStatus('connection_error');
+        }
+        
+      } catch (error) {
+        console.error('❌ Erro na inicialização:', error);
+        setSupabaseStatus('error');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initializeApp();
+  }, []);
 
   // Login fictício (conforme solicitado)
   const handleLogin = (email, password) => {
@@ -37,6 +83,23 @@ export default function App() {
   const handleLogout = () => {
     setIsLoggedIn(false);
   };
+
+  // Tela de loading e status
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#0A2A54" />
+        <Text style={styles.loadingText}>Inicializando Sucesso FM...</Text>
+        <Text style={styles.statusText}>
+          {supabaseStatus === 'checking' && 'Verificando configurações...'}
+          {supabaseStatus === 'config_error' && '❌ Erro nas configurações'}
+          {supabaseStatus === 'connection_error' && '❌ Erro na conexão'}
+          {supabaseStatus === 'connected' && '✅ Conectando ao banco...'}
+          {supabaseStatus === 'error' && '❌ Erro na inicialização'}
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer>
@@ -69,3 +132,27 @@ export default function App() {
     </NavigationContainer>
   );
 }
+
+// Estilos para a tela de loading
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#87CEEB',
+    padding: 20,
+  },
+  loadingText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#0A2A54',
+    marginTop: 20,
+    textAlign: 'center',
+  },
+  statusText: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 10,
+    textAlign: 'center',
+  },
+});
