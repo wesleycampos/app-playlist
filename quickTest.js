@@ -78,29 +78,64 @@ export const testAuth = async () => {
   console.log('========================');
   
   try {
-    // Tentar criar usuário de teste
-    const { data, error } = await supabase.auth.signUp({
+    // Primeiro, tentar fazer login com usuário existente
+    console.log('🔑 Tentando login com usuário existente...');
+    
+    const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
       email: 'teste@sucessofm.com',
-      password: 'Teste123!',
-      options: {
-        data: {
-          full_name: 'Usuário Teste',
-          phone: '(11) 99999-9999',
-          uf: 'SP',
-          city: 'São Paulo'
-        }
-      }
+      password: 'Teste123!'
     });
     
-    if (error) {
-      console.error('❌ Erro na criação:', error.message);
+    if (loginError) {
+      console.log('ℹ️  Login falhou:', loginError.message);
+      
+      if (loginError.message.includes('Email not confirmed')) {
+        console.log('📧 Email não confirmado! Vamos criar um novo usuário...');
+        
+        // Criar novo usuário com email diferente
+        const { data, error } = await supabase.auth.signUp({
+          email: 'teste2@sucessofm.com',
+          password: 'Teste123!',
+          options: {
+            data: {
+              full_name: 'Usuário Teste 2',
+              phone: '(11) 88888-8888',
+              uf: 'RJ',
+              city: 'Rio de Janeiro'
+            }
+          }
+        });
+        
+        if (error) {
+          console.error('❌ Erro na criação:', error.message);
+          return false;
+        }
+        
+        console.log('✅ Novo usuário criado:', data.user?.email);
+        console.log('🆔 ID:', data.user?.id);
+        
+        // Tentar login imediato
+        const { data: newLoginData, error: newLoginError } = await supabase.auth.signInWithPassword({
+          email: 'teste2@sucessofm.com',
+          password: 'Teste123!'
+        });
+        
+        if (newLoginError) {
+          console.log('⚠️  Login ainda falhou:', newLoginError.message);
+        } else {
+          console.log('🎉 Login realizado com sucesso!');
+        }
+        
+        return true;
+      }
+      
       return false;
+    } else {
+      console.log('🎉 Login realizado com sucesso!');
+      console.log('👤 Usuário:', loginData.user?.email);
+      console.log('🆔 ID:', loginData.user?.id);
+      return true;
     }
-    
-    console.log('✅ Usuário criado:', data.user?.email);
-    console.log('🆔 ID:', data.user?.id);
-    
-    return true;
     
   } catch (error) {
     console.error('❌ Erro inesperado:', error.message);

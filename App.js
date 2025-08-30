@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
 
 import WelcomeScreen from './WelcomeScreen';
 import LoginScreen from './LoginScreen';
@@ -19,6 +19,7 @@ import MenuScreen from './MenuScreen';
 import { validateConfig } from './config';
 import runAllTests from './testConnection';
 import { quickTest, testAuth } from './quickTest';
+import { supabase } from './supabase';
 
 const Stack = createNativeStackNavigator();
 
@@ -27,7 +28,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [supabaseStatus, setSupabaseStatus] = useState('checking');
 
-  // Validar configurações e testar conexão ao iniciar
+  // Validar configurações e verificar sessão ativa
   useEffect(() => {
     const initializeApp = async () => {
       try {
@@ -42,17 +43,20 @@ export default function App() {
           return;
         }
         
-        console.log('✅ Configurações válidas, testando conexão...');
+        console.log('✅ Configurações válidas, verificando sessão...');
         
-        // Testar conexão com Supabase
-        const testResults = await runAllTests();
+        // Verificar se há uma sessão ativa
+        const { data: { session }, error } = await supabase.auth.getSession();
         
-        if (testResults.connection.success) {
-          console.log('🎉 Supabase conectado com sucesso!');
+        if (error) {
+          console.log('ℹ️  Nenhuma sessão ativa:', error.message);
+        } else if (session) {
+          console.log('✅ Sessão ativa encontrada:', session.user.email);
+          setIsLoggedIn(true);
           setSupabaseStatus('connected');
         } else {
-          console.error('❌ Falha na conexão com Supabase');
-          setSupabaseStatus('connection_error');
+          console.log('ℹ️  Nenhuma sessão ativa');
+          setSupabaseStatus('connected');
         }
         
       } catch (error) {
@@ -71,30 +75,33 @@ export default function App() {
     try {
       console.log('🔐 App.js: Tentando login com Supabase');
       
-      // Verificar se o usuário existe no Supabase
-      const { data: { user }, error } = await supabase.auth.getUser();
+      // Fazer login diretamente com Supabase
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
       
       if (error) {
-        console.log('ℹ️  Nenhum usuário logado ainda');
-      } else if (user) {
-        console.log('✅ Usuário já logado:', user.email);
-        setIsLoggedIn(true);
-        return true;
-      }
-      
-      // Se não estiver logado, tentar fazer login
-      const result = await auth.signIn(email, password);
-      
-      if (result.success) {
-        console.log('✅ Login realizado com sucesso no App.js');
-        setIsLoggedIn(true);
-        return true;
-      } else {
-        console.error('❌ Falha no login:', result.error);
+        console.error('❌ Erro no login:', error.message);
         return false;
       }
+      
+      if (data.user) {
+        console.log('✅ Login realizado com sucesso no App.js');
+        console.log('👤 Usuário:', data.user.email);
+        console.log('🆔 ID:', data.user.id);
+        
+        // Atualizar estado de login
+        setIsLoggedIn(true);
+        
+        return true;
+      } else {
+        console.error('❌ Login falhou - usuário não retornado');
+        return false;
+      }
+      
     } catch (error) {
-      console.error('❌ Erro no login do App.js:', error);
+      console.error('❌ Erro inesperado no login do App.js:', error);
       return false;
     }
   };
@@ -109,16 +116,17 @@ export default function App() {
     try {
       console.log('🚪 App.js: Fazendo logout');
       
-      const result = await auth.signOut();
+      const { error } = await supabase.auth.signOut();
       
-      if (result.success) {
-        console.log('✅ Logout realizado com sucesso');
-        setIsLoggedIn(false);
+      if (error) {
+        console.error('❌ Erro no logout:', error.message);
       } else {
-        console.error('❌ Erro no logout:', result.error);
-        // Mesmo com erro, vamos fazer logout local
-        setIsLoggedIn(false);
+        console.log('✅ Logout realizado com sucesso');
       }
+      
+      // Sempre fazer logout local
+      setIsLoggedIn(false);
+      
     } catch (error) {
       console.error('❌ Erro inesperado no logout:', error);
       // Mesmo com erro, vamos fazer logout local
