@@ -1,14 +1,56 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Image, Pressable, Alert, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { supabase } from './supabase';
 
 export default function MenuScreen({ navigation, onLogout }) {
+	const [userName, setUserName] = useState('');
+	const [userAvatar, setUserAvatar] = useState('');
+
+	// Carregar nome do usuário
+	useEffect(() => {
+		loadUserName();
+	}, []);
+
+	const loadUserName = async () => {
+		try {
+			const { data: { user }, error: userError } = await supabase.auth.getUser();
+			if (userError || !user) {
+				console.log('Usuário não encontrado no menu');
+				setUserName('Usuário');
+				return;
+			}
+
+			// Buscar perfil do usuário
+			const { data: profile, error: profileError } = await supabase
+				.from('user_profiles')
+				.select('full_name, avatar_url')
+				.eq('id', user.id)
+				.maybeSingle();
+
+			if (profileError) {
+				console.log('Erro ao buscar perfil no menu:', profileError.message);
+				setUserName(user.email?.split('@')[0] || 'Usuário');
+			} else if (profile && profile.full_name) {
+				setUserName(profile.full_name);
+			} else {
+				setUserName(user.email?.split('@')[0] || 'Usuário');
+			}
+
+			// Definir avatar do usuário
+			setUserAvatar(profile?.avatar_url || '');
+		} catch (error) {
+			console.error('Erro ao carregar nome do usuário no menu:', error);
+			setUserName('Usuário');
+		}
+	};
+
 	const handlePress = (key) => {
 		switch (key) {
 			case 'perfil':
-				Alert.alert('Meu perfil', 'Em breve.');
+				navigation.navigate('ProfileEdit');
 				break;
 			case 'conectar':
 				Alert.alert('Conectar', 'Procura de dispositivos em breve.');
@@ -46,18 +88,22 @@ export default function MenuScreen({ navigation, onLogout }) {
 				{/* Topbar */}
 				<View style={styles.topBar}>
 					<MaterialIcons name="arrow-back" size={24} color="#0A2A54" onPress={() => navigation.goBack()} />
-					<Text style={styles.topTitle}>GOODHEALTH - PRIVATE CLINIC</Text>
+					<Text style={styles.topTitle}>RC PLAY</Text>
 					<View style={{ width: 24 }} />
 				</View>
 
 				{/* Avatar/Logo e título */}
 				<View style={styles.header}>
 					<View style={styles.logoCircle}>
-						<Image source={require('./assets/images/ico_user.png')} style={styles.logo} />
+						{userAvatar ? (
+							<Image source={{ uri: userAvatar }} style={styles.logoAvatar} />
+						) : (
+							<Image source={require('./assets/images/ico_user.png')} style={styles.logo} />
+						)}
 					</View>
 					<View style={{ alignItems: 'center' }}>
 						<View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-							<Text style={styles.brand}>GoodHealth</Text>
+							<Text style={styles.brand}>{userName}</Text>
 							<Image source={require('./assets/images/ico_premium.png')} style={styles.crown} />
 						</View>
 						<View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -108,6 +154,12 @@ const styles = StyleSheet.create({
 		...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }, android: { elevation: 3 } }),
 	},
 	logo: { width: 90, height: 90, tintColor: '#fff' },
+	logoAvatar: { 
+		width: 150, 
+		height: 150, 
+		borderRadius: 75,
+		resizeMode: 'cover'
+	},
 	brand: { fontSize: 16, fontWeight: '800', color: '#0A2A54' },
 	crown: { width: 16, height: 16, resizeMode: 'contain' },
 	manage: { fontSize: 16, color: '#6d7a8b', marginVertical: 2 },

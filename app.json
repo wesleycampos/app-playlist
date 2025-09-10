@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "sucesso-fm",
-    "slug": "sucesso-fm",
+    "name": "RC PLAY",
+    "slug": "rc-play",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -21,7 +21,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.wesleykennedy.sucessofm"
+      "package": "com.wesleykennedy.rcplay"
     },
     "web": {
       "favicon": "./assets/favicon.png"

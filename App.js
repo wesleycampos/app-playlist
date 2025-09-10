@@ -14,6 +14,7 @@ import PortalRCNewsWebView from './PortalRCNewsWebView';
 import MainScreen from './MainScreen';
 import PlaylistScreen from './PlaylistScreen';
 import MenuScreen from './MenuScreen';
+import ProfileEditScreen from './ProfileEditScreen';
 
 // Importar configurações e testes do Supabase
 import { validateConfig } from './config';
@@ -171,6 +172,7 @@ export default function App() {
             <Stack.Screen name="Menu">
               {props => <MenuScreen {...props} onLogout={handleLogout} />}
             </Stack.Screen>
+            <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
             <Stack.Screen name="SucessoFMWebView" component={SucessoFMWebView} />
             <Stack.Screen name="RCPlayTVWebView" component={RCPlayTVWebView} />
             <Stack.Screen name="PortalRCNewsWebView" component={PortalRCNewsWebView} />

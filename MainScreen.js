@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Player from './PlayerService';
+import { supabase, users } from './supabase';
 
 const PLAYLIST_URL = 'https://musicas.wkdesign.com.br/playlist.php';
 
@@ -36,9 +37,62 @@ export default function MainScreen({ navigation, route }) {
   const [library, setLibrary] = useState([]);
   const [current, setCurrent] = useState(null);
   const [isCustomQueue, setIsCustomQueue] = useState(false);
+  const [userName, setUserName] = useState('');
+  const [userAvatar, setUserAvatar] = useState('');
 
   const isConnecting = status === 'connecting';
   const isPlaying   = status === 'playing';
+
+  // ---------- buscar nome do usuário ----------
+  const fetchUserName = useCallback(async () => {
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.log('Usuário não encontrado:', userError?.message);
+        setUserName('Usuário');
+        return;
+      }
+
+      // Buscar perfil diretamente com Supabase para evitar erro do .single()
+      const { data: profile, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('full_name, avatar_url')
+        .eq('id', user.id)
+        .maybeSingle(); // Usa maybeSingle() em vez de single()
+
+      if (profileError) {
+        console.log('Erro ao buscar perfil:', profileError.message);
+        // Se não encontrar perfil, usar o email como fallback
+        setUserName(user.email?.split('@')[0] || 'Usuário');
+        return;
+      }
+
+      // Se encontrou perfil e tem nome completo, usar ele
+      if (profile && profile.full_name) {
+        setUserName(profile.full_name);
+      } else {
+        // Senão, usar email como fallback
+        setUserName(user.email?.split('@')[0] || 'Usuário');
+      }
+
+      // Definir avatar do usuário
+      setUserAvatar(profile?.avatar_url || '');
+    } catch (error) {
+      console.error('Erro ao buscar nome do usuário:', error);
+      setUserName('Usuário');
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUserName();
+  }, [fetchUserName]);
+
+  // Recarregar nome quando voltar da tela de edição de perfil
+  useFocusEffect(
+    useCallback(() => {
+      fetchUserName();
+    }, [fetchUserName])
+  );
 
   // ---------- animação do disco ----------
   const spin = useRef(new Animated.Value(0)).current;
@@ -191,7 +245,7 @@ export default function MainScreen({ navigation, route }) {
         {/* Topbar */}
         <View style={styles.topBar}>
           <MaterialIcons name="menu" size={24} color={C.text} onPress={() => navigation.navigate('Menu')} />
-          <Text style={[styles.topTitle, { color: C.text }]}>GOODHEALTH - PRIVATE CLINIC</Text>
+          <Text style={[styles.topTitle, { color: C.text }]}>RC PLAY</Text>
           <View style={styles.topIcons}>
             <Ionicons
               name={dark ? 'moon' : 'sunny-outline'}
@@ -207,10 +261,20 @@ export default function MainScreen({ navigation, route }) {
           {/* Boas-vindas */}
           <View style={styles.welcomeSection}>
             <View style={[styles.logoCircle, { backgroundColor: C.text }]}>
-              <Image source={require('./assets/images/ico_user.png')} style={[styles.heroLogo, { tintColor: dark ? '#0b1220' : '#fff' }]} />
+              {userAvatar ? (
+                <Image 
+                  source={{ uri: userAvatar }} 
+                  style={styles.heroLogoAvatar} 
+                />
+              ) : (
+                <Image 
+                  source={require('./assets/images/ico_user.png')} 
+                  style={[styles.heroLogo, { tintColor: dark ? '#0b1220' : '#fff' }]} 
+                />
+              )}
             </View>
             <Text style={[styles.welcomeTitle, { color: C.text }]}>BEM-VINDO</Text>
-            <Text style={[styles.welcomeSubtitle, { color: C.subtext }]}>SucessoMusic - Private Clinic</Text>
+            <Text style={[styles.welcomeSubtitle, { color: C.subtext }]}>{userName}</Text>
           </View>
 
           {/* Card do Player */}
@@ -318,6 +382,12 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginBottom: 12,
   },
   heroLogo: { width: 80, height: 80 },
+  heroLogoAvatar: { 
+    width: 120, 
+    height: 120, 
+    borderRadius: 60,
+    resizeMode: 'cover'
+  },
   welcomeTitle: { fontSize: 24, fontWeight: '800' },
   welcomeSubtitle: { fontSize: 14 },
 
