@@ -16,9 +16,11 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Player from './PlayerService';
-import { supabase } from './supabase';
+import { API_CONFIG } from './config';
+import { saveCurrentUserPlaylist, resolveCurrentUserPlaylist } from './src/api/playlist';
+import { getUserId } from './src/auth/session';
 
-const PLAYLIST_URL = 'https://musicas.wkdesign.com.br/playlist.php';
+const PLAYLIST_URL = API_CONFIG.playlistUrl;
 
 export default function PlaylistScreen({ navigation, route }) {
   const [library, setLibrary] = useState([]);
@@ -30,6 +32,9 @@ export default function PlaylistScreen({ navigation, route }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [userPlaylist, setUserPlaylist] = useState([]); // Playlist personalizada do usuário
   const [isLoadingUserPlaylist, setIsLoadingUserPlaylist] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [planInfo, setPlanInfo] = useState(null);
+  const [localLimit, setLocalLimit] = useState(null);
   const chipsRef = useRef(null);
 
   // Callback para reproduzir música selecionada
@@ -37,7 +42,7 @@ export default function PlaylistScreen({ navigation, route }) {
 
   useEffect(() => {
     fetchPlaylist();
-    loadUserPlaylist();
+    loadServerPlaylist(); // Carregar playlist do servidor usando API
   }, []);
 
   // Marcar músicas da playlist do usuário quando ambos os dados estiverem carregados
@@ -69,61 +74,36 @@ export default function PlaylistScreen({ navigation, route }) {
     }
   };
 
-  // Carregar playlist personalizada do usuário
-  const loadUserPlaylist = async () => {
+  // Carregar playlist do servidor usando API
+  const loadServerPlaylist = async () => {
     try {
       setIsLoadingUserPlaylist(true);
       
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        console.log('Usuário não encontrado para carregar playlist');
-        setIsLoadingUserPlaylist(false);
-        return;
-      }
-
-      // Buscar playlist personalizada do usuário
-      const { data: playlist, error: playlistError } = await supabase
-        .from('playlists')
-        .select(`
-          id,
-          name,
-          playlist_tracks (
-            id,
-            track_id,
-            title,
-            artist,
-            album,
-            duration,
-            url,
-            cover_image_url,
-            position
-          )
-        `)
-        .eq('user_id', user.id)
-        .eq('name', 'Minha Playlist')
-        .maybeSingle();
-
-      if (playlistError) {
-        console.log('Erro ao buscar playlist do usuário:', playlistError.message);
-      } else if (playlist && playlist.playlist_tracks) {
-        // Ordenar por posição e converter para formato compatível
-        const tracks = playlist.playlist_tracks
-          .sort((a, b) => a.position - b.position)
-          .map(track => ({
-            id: track.track_id,
-            title: track.title,
-            artist: track.artist,
-            album: track.album,
-            duration: track.duration,
-            url: track.url,
-            cover_image_url: track.cover_image_url
-          }));
+      const data = await resolveCurrentUserPlaylist(1800);
+      
+      if (data.items && data.items.length > 0) {
+        // Converter dados do servidor para formato local
+        const serverTracks = data.items.map((item, index) => ({
+          trackKey: `server_${index}`,
+          id: `server_${index}`,
+          title: item.title,
+          path: item.path,
+          streamUrl: item.streamUrl,
+          duration: '0:00',
+          artist: 'Artista Desconhecido',
+          album: 'Álbum Desconhecido',
+          url: item.streamUrl,
+          cover_image_url: null
+        }));
         
-        setUserPlaylist(tracks);
+        setUserPlaylist(serverTracks);
       }
-
     } catch (error) {
-      console.error('Erro ao carregar playlist do usuário:', error);
+      if (error.message.includes('Usuário não autenticado')) {
+        navigation.navigate('Login');
+      } else {
+        console.error('Erro ao carregar playlist do servidor:', error);
+      }
     } finally {
       setIsLoadingUserPlaylist(false);
     }
@@ -155,15 +135,36 @@ export default function PlaylistScreen({ navigation, route }) {
   // chave estável para itens (id || url)
   const trackKey = (t, idx) => String(t?.id ?? t?.url ?? `track-${idx}`);
 
-  const toggleSelect = (track, idxInSection) => {
+  const toggleSelect = async (track, idxInSection) => {
     const key = trackKey(track, idxInSection);
     const copy = new Set(selectedKeys);
+    
+    // Se está tentando adicionar uma música e já atingiu o limite
+    if (!copy.has(key) && localLimit && selectedKeys.size >= localLimit) {
+      Alert.alert(
+        'Limite Atingido',
+        `Você já selecionou ${localLimit} músicas. Este é o limite do seu plano atual.\n\nPara adicionar mais músicas, entre em contato conosco para fazer upgrade do seu plano.`,
+        [{ text: 'OK', style: 'default' }]
+      );
+      return;
+    }
+    
     if (copy.has(key)) copy.delete(key); else copy.add(key);
     setSelectedKeys(copy);
     
     // Se a música foi selecionada e não é a atual, reproduz automaticamente
     if (copy.has(key) && (!currentTrack || currentTrack.id !== track.id)) {
       playTrack(track);
+    }
+    
+    // Resolver automaticamente quando há músicas selecionadas
+    if (copy.size > 0) {
+      try {
+        const data = await resolveCurrentUserPlaylist(1800);
+        console.log('Playlist resolvida automaticamente:', data.items?.length || 0, 'músicas');
+      } catch (error) {
+        console.log('Erro ao resolver playlist automaticamente:', error.message);
+      }
     }
   };
 
@@ -267,90 +268,92 @@ export default function PlaylistScreen({ navigation, route }) {
       return;
     }
 
-    // Salvar playlist personalizada no banco de dados
+    // Salvar playlist usando o cliente de API
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        Alert.alert('Erro', 'Usuário não encontrado');
-        return;
-      }
+      setSaving(true);
+      
+      // Mapear paths das músicas selecionadas
+      const paths = queue.map(track => {
+        // Se o track já tem path, usar ele; senão construir a partir do título
+        if (track.path) {
+          return track.path;
+        }
+        // Construir path baseado no título (assumindo formato padrão)
+        return `genres/${track.genre || 'Unknown'}/${track.title}.mp3`;
+      });
 
-      // Verificar se já existe uma playlist personalizada
-      const { data: existingPlaylist } = await supabase
-        .from('playlists')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('name', 'Minha Playlist')
-        .maybeSingle();
+      const data = await saveCurrentUserPlaylist(paths);
 
-      let playlistId;
-      if (existingPlaylist) {
-        // Atualizar playlist existente
-        playlistId = existingPlaylist.id;
-        
-        // Remover todas as músicas existentes
-        await supabase
-          .from('playlist_tracks')
-          .delete()
-          .eq('playlist_id', playlistId);
-      } else {
-        // Criar nova playlist
-        const { data: newPlaylist, error: createError } = await supabase
-          .from('playlists')
-          .insert([{
-            user_id: user.id,
-            name: 'Minha Playlist',
-            description: 'Playlist personalizada do usuário',
-            is_public: false,
-            track_count: queue.length
-          }])
-          .select()
-          .single();
-
-        if (createError) throw createError;
-        playlistId = newPlaylist.id;
-      }
-
-      // Adicionar as músicas selecionadas
-      const tracksToInsert = queue.map((track, index) => ({
-        playlist_id: playlistId,
-        track_id: track.id || track.url,
-        title: track.title,
-        artist: track.artist,
-        album: track.album,
-        duration: track.duration,
-        url: track.url,
-        cover_image_url: track.cover_image_url,
-        position: index
-      }));
-
-      const { error: insertError } = await supabase
-        .from('playlist_tracks')
-        .insert(tracksToInsert);
-
-      if (insertError) throw insertError;
-
-      // Atualizar contador de músicas na playlist
-      await supabase
-        .from('playlists')
-        .update({ track_count: queue.length })
-        .eq('id', playlistId);
-
-      console.log('Playlist personalizada salva com sucesso!');
+      Alert.alert(
+        'Sucesso!', 
+        `Playlist salva com ${data.saved} músicas!\nPlano: ${data.plan}\nLimite: ${data.limit}`,
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.navigate('Main', { customQueue: queue })
+          }
+        ]
+      );
 
     } catch (error) {
       console.error('Erro ao salvar playlist:', error);
-      Alert.alert('Erro', 'Não foi possível salvar a playlist. Tente novamente.');
-      return;
+      
+      // Tratamento específico de erros
+      if (error.message.includes('Limite do plano')) {
+        // Extrair limite da mensagem de erro
+        const limitMatch = error.message.match(/máx (\d+)/);
+        if (limitMatch) {
+          setLocalLimit(parseInt(limitMatch[1]));
+        }
+        
+        Alert.alert(
+          'Limite Excedido', 
+          error.message + '\n\nPara adicionar mais músicas, entre em contato conosco para fazer upgrade do seu plano.',
+          [{ text: 'OK', style: 'default' }]
+        );
+      } else if (error.message.includes('Usuário não autenticado')) {
+        Alert.alert('Sessão Expirada', 'Faça login novamente.');
+        navigation.navigate('Login');
+      } else {
+        Alert.alert('Erro', 'Falha ao salvar playlist. Tente novamente.');
+      }
+    } finally {
+      setSaving(false);
     }
-
-    // Navegar para a tela principal com a playlist
-    navigation.navigate({
-      name: 'Main',
-      params: { customQueue: queue, shouldPlayQueue: true },
-      merge: true,
-    });
   };
+
+  // Função para carregar informações do plano
+  const loadPlanInfo = async () => {
+    try {
+      const data = await resolveCurrentUserPlaylist(1800);
+      setPlanInfo({
+        plan: data.plan || 'free',
+        limit: data.limit || 10,
+        total: data.total || 0
+      });
+      
+      // Definir limite local se não estiver definido
+      if (!localLimit && data.limit) {
+        setLocalLimit(data.limit);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar informações do plano:', error);
+      // Definir valores padrão em caso de erro
+      setPlanInfo({
+        plan: 'free',
+        limit: 10,
+        total: 0
+      });
+    }
+  };
+
+  // Carregar informações do plano ao montar o componente
+  useEffect(() => {
+    loadPlanInfo();
+  }, []);
+
+  // Verificar se o limite foi atingido
+  const isLimitReached = localLimit && selectedKeys.size >= localLimit;
 
   const renderTrackItem = ({ item, index }) => {
     const key = trackKey(item, index);
@@ -444,7 +447,10 @@ export default function PlaylistScreen({ navigation, route }) {
           <View style={styles.headerInfo}>
             <Text style={styles.headerTitle}>Montar playlist</Text>
             <Text style={styles.headerSubtitle}>
-              {selectedCount > 0 ? `${selectedCount} selecionada(s)` : 'Escolha as músicas que deseja ouvir'}
+              {selectedCount > 0 
+                ? `${selectedCount}${localLimit ? `/${localLimit}` : ''} selecionada(s)` 
+                : 'Escolha as músicas que deseja ouvir'
+              }
             </Text>
           </View>
 
@@ -453,6 +459,38 @@ export default function PlaylistScreen({ navigation, route }) {
           </View>
         </View>
 
+        {/* Informações do Plano - Header */}
+        {planInfo && (
+          <View style={styles.planHeaderContainer}>
+            <View style={styles.planHeaderContent}>
+              <View style={styles.planBadge}>
+                <Text style={styles.planBadgeText}>{(planInfo.plan || 'FREE').toUpperCase()}</Text>
+              </View>
+              <View style={styles.usageContainer}>
+                <Text style={styles.usageText}>
+                  {planInfo.total || 0}/{localLimit || planInfo.limit || 0} músicas
+                </Text>
+                <View style={styles.usageBar}>
+                  <View 
+                    style={[
+                      styles.usageProgress, 
+                      { 
+                        width: `${Math.min(((planInfo.total || 0) / (localLimit || planInfo.limit || 1)) * 100, 100)}%`,
+                        backgroundColor: isLimitReached ? '#ff6b6b' : '#34C759'
+                      }
+                    ]} 
+                  />
+                </View>
+              </View>
+            </View>
+            {isLimitReached && (
+              <View style={styles.limitAlertContainer}>
+                <MaterialIcons name="warning" size={16} color="#ff6b6b" />
+                <Text style={styles.limitAlertText}>Limite do plano atingido</Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Barra de Pesquisa */}
         <View style={styles.searchContainer}>
@@ -542,8 +580,14 @@ export default function PlaylistScreen({ navigation, route }) {
 
       {/* Botão Concluir Fixo */}
       <View style={styles.fixedConcludeContainer}>
-        <Pressable style={styles.concludeBtn} onPress={handleConclude}>
-          <Text style={styles.concludeText}>CONCLUIR</Text>
+        <Pressable 
+          style={[styles.concludeBtn, (saving || isLimitReached) && styles.disabledButton]} 
+          onPress={handleConclude}
+          disabled={saving || isLimitReached}
+        >
+          <Text style={styles.concludeText}>
+            {isLimitReached ? 'LIMITE ATINGIDO' : (saving ? 'SALVANDO...' : 'CONCLUIR')}
+          </Text>
         </Pressable>
       </View>
     </LinearGradient>
@@ -677,4 +721,79 @@ const styles = StyleSheet.create({
     ...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }, android: { elevation: 3 } }),
   },
   concludeText: { color: '#fff', fontWeight: '800', fontSize: 15, letterSpacing: 0.4 },
+
+  // Informações do Plano - Header
+  planHeaderContainer: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eef2f7',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  planHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  planBadge: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  planBadgeText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  usageContainer: {
+    flex: 1,
+    marginLeft: 16,
+    alignItems: 'flex-end',
+  },
+  usageText: {
+    color: '#666',
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  usageBar: {
+    width: 120,
+    height: 4,
+    backgroundColor: '#eef2f7',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  usageProgress: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  limitAlertContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#ffe6e6',
+  },
+  limitAlertText: {
+    color: '#ff6b6b',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+
+
+  // Botão Desabilitado
+  disabledButton: {
+    backgroundColor: '#cccccc',
+    opacity: 0.6,
+  },
 });

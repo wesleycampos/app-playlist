@@ -11,6 +11,7 @@ export const SUPABASE_CONFIG = {
 
 // Configurações da API externa
 export const API_CONFIG = {
+  baseUrl: 'https://musicas.radiosucessobrasilia.com.br/api',
   playlistUrl: 'https://musicas.wkdesign.com.br/playlist.php',
   timeout: 10000, // 10 segundos
 };

@@ -7,7 +7,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { supabase } from './supabase';
+import { saveCurrentUserProfile, getCurrentUserProfile } from './src/api/profile';
+import { getUserId } from './src/auth/session';
 
 export default function ProfileEditScreen({ navigation }) {
   const [fullName, setFullName] = useState('');
@@ -30,36 +31,37 @@ export default function ProfileEditScreen({ navigation }) {
     try {
       setIsLoading(true);
       
-      // Buscar dados do usuário autenticado
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        Alert.alert('Erro', 'Não foi possível carregar os dados do usuário');
+      const userId = await getUserId();
+      if (!userId) {
+        Alert.alert('Erro', 'Usuário não autenticado');
         navigation.goBack();
         return;
       }
 
-      setEmail(user.email || '');
+      // Buscar dados do usuário usando API
+      const data = await getCurrentUserProfile();
+      
+      if (data.profile) {
+        setFullName(data.profile.full_name || '');
+        setPhone(data.profile.phone || '');
+        setCity(data.profile.city || '');
+        setUf(data.profile.uf || '');
+        setAvatarUrl(data.profile.avatar_url || '');
+      }
 
-      // Buscar perfil do usuário
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('full_name, phone, city, uf, avatar_url')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (profileError) {
-        console.log('Erro ao buscar perfil:', profileError.message);
-      } else if (profile) {
-        setFullName(profile.full_name || '');
-        setPhone(profile.phone || '');
-        setCity(profile.city || '');
-        setUf(profile.uf || '');
-        setAvatarUrl(profile.avatar_url || '');
+      // Buscar email do usuário autenticado
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setEmail(user.email || '');
       }
 
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-      Alert.alert('Erro', 'Não foi possível carregar os dados');
+      console.error('Erro ao carregar dados do usuário:', error);
+      if (error.message.includes('Usuário não autenticado')) {
+        navigation.navigate('Login');
+      } else {
+        Alert.alert('Erro', 'Falha ao carregar dados do perfil');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -190,22 +192,7 @@ export default function ProfileEditScreen({ navigation }) {
     try {
       setIsSaving(true);
 
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        Alert.alert('Erro', 'Usuário não encontrado');
-        return;
-      }
-
-      // Verificar se já existe perfil
-      const { data: existingProfile } = await supabase
-        .from('user_profiles')
-        .select('id')
-        .eq('id', user.id)
-        .maybeSingle();
-
       const profileData = {
-        id: user.id,
-        email: user.email,
         full_name: fullName.trim(),
         phone: phone.trim() || null,
         city: city.trim() || null,
@@ -214,25 +201,8 @@ export default function ProfileEditScreen({ navigation }) {
         updated_at: new Date().toISOString()
       };
 
-      let result;
-      if (existingProfile) {
-        // Atualizar perfil existente
-        result = await supabase
-          .from('user_profiles')
-          .update(profileData)
-          .eq('id', user.id)
-          .select();
-      } else {
-        // Criar novo perfil
-        result = await supabase
-          .from('user_profiles')
-          .insert([profileData])
-          .select();
-      }
-
-      if (result.error) {
-        throw result.error;
-      }
+      // Salvar perfil usando API
+      const result = await saveCurrentUserProfile(profileData);
 
       Alert.alert('Sucesso', 'Perfil atualizado com sucesso!', [
         { text: 'OK', onPress: () => navigation.goBack() }
@@ -240,7 +210,13 @@ export default function ProfileEditScreen({ navigation }) {
 
     } catch (error) {
       console.error('Erro ao salvar perfil:', error);
-      Alert.alert('Erro', 'Não foi possível salvar o perfil. Tente novamente.');
+      
+      if (error.message.includes('Usuário não autenticado')) {
+        Alert.alert('Sessão Expirada', 'Faça login novamente.');
+        navigation.navigate('Login');
+      } else {
+        Alert.alert('Erro', 'Falha ao salvar perfil. Tente novamente.');
+      }
     } finally {
       setIsSaving(false);
     }
