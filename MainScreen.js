@@ -4,6 +4,7 @@ import {
   View, Text, Pressable, StyleSheet, ActivityIndicator,
   Platform, Image, Alert, ScrollView, Linking, Animated, Easing, useColorScheme
 } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -39,49 +40,80 @@ export default function MainScreen({ navigation, route }) {
   const [isCustomQueue, setIsCustomQueue] = useState(false);
   const [userName, setUserName] = useState('');
   const [userAvatar, setUserAvatar] = useState('');
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
 
   const isConnecting = status === 'connecting';
   const isPlaying   = status === 'playing';
 
+  // Função para formatar tempo em MM:SS
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Função para lidar com o arrastar do slider
+  const handleSliderChange = async (value) => {
+    if (duration > 0) {
+      const newPosition = (value / 100) * duration;
+      setCurrentTime(newPosition);
+      await Player.seekTo(newPosition * 1000); // PlayerService espera em millisegundos
+    }
+  };
+
   // ---------- buscar nome do usuário ----------
   const fetchUserName = useCallback(async () => {
+    // Evitar chamadas duplicadas
+    if (isLoadingProfile) {
+      console.log('Carregamento de perfil já em andamento, ignorando...');
+      return;
+    }
+
     try {
+      setIsLoadingProfile(true);
+      
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         console.log('Usuário não encontrado:', userError?.message);
         setUserName('Usuário');
+        setUserAvatar('');
         return;
       }
 
-      // Buscar perfil diretamente com Supabase para evitar erro do .single()
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('full_name, avatar_url')
-        .eq('id', user.id)
-        .maybeSingle(); // Usa maybeSingle() em vez de single()
+      // Definir nome padrão baseado no email
+      const defaultName = user.email?.split('@')[0] || 'Usuário';
+      setUserName(defaultName);
+      setUserAvatar('');
 
-      if (profileError) {
-        console.log('Erro ao buscar perfil:', profileError.message);
-        // Se não encontrar perfil, usar o email como fallback
-        setUserName(user.email?.split('@')[0] || 'Usuário');
-        return;
+      // Tentar buscar perfil apenas se o usuário estiver autenticado
+      try {
+        const { data: profileData, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('full_name, avatar_url')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (!profileError && profileData && profileData.full_name) {
+          setUserName(profileData.full_name);
+          if (profileData.avatar_url) {
+            setUserAvatar(profileData.avatar_url);
+          }
+        }
+      } catch (profileError) {
+        console.log('Erro ao buscar perfil (não crítico):', profileError.message);
+        // Não é crítico, mantém o nome padrão
       }
-
-      // Se encontrou perfil e tem nome completo, usar ele
-      if (profile && profile.full_name) {
-        setUserName(profile.full_name);
-      } else {
-        // Senão, usar email como fallback
-        setUserName(user.email?.split('@')[0] || 'Usuário');
-      }
-
-      // Definir avatar do usuário
-      setUserAvatar(profile?.avatar_url || '');
     } catch (error) {
-      console.error('Erro ao buscar nome do usuário:', error);
+      console.error('Erro geral ao buscar dados do usuário:', error);
       setUserName('Usuário');
+      setUserAvatar('');
+    } finally {
+      setIsLoadingProfile(false);
     }
-  }, []);
+  }, [isLoadingProfile]);
 
   useEffect(() => {
     fetchUserName();
@@ -152,6 +184,13 @@ export default function MainScreen({ navigation, route }) {
 
   const onPlaybackStatus = (s) => {
     if (!s || !s.isLoaded) return;
+    
+    // Atualizar tempo atual e duração
+    if (s.positionMillis !== undefined && s.durationMillis !== undefined) {
+      setCurrentTime(s.positionMillis / 1000);
+      setDuration(s.durationMillis / 1000);
+    }
+    
     // Avança automaticamente quando a faixa termina
     if (s.didJustFinish) {
       go(1);
@@ -260,21 +299,21 @@ export default function MainScreen({ navigation, route }) {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {/* Boas-vindas */}
           <View style={styles.welcomeSection}>
-            <View style={[styles.logoCircle, { backgroundColor: C.text }]}>
-              {userAvatar ? (
-                <Image 
-                  source={{ uri: userAvatar }} 
-                  style={styles.heroLogoAvatar} 
-                />
-              ) : (
+            <View style={styles.welcomeLeft}>
+              <View style={[styles.logoCircle, { backgroundColor: '#FFD700' }]}>
                 <Image 
                   source={require('./assets/images/ico_user.png')} 
-                  style={[styles.heroLogo, { tintColor: dark ? '#0b1220' : '#fff' }]} 
+                  style={[styles.heroLogo, { tintColor: '#0A2A54' }]} 
                 />
-              )}
+              </View>
+              <View style={styles.welcomeText}>
+                <Text style={[styles.welcomeTitle, { color: C.text }]}>BEM-VINDO</Text>
+                <Text style={[styles.welcomeSubtitle, { color: C.subtext }]}>{userName}</Text>
+              </View>
             </View>
-            <Text style={[styles.welcomeTitle, { color: C.text }]}>BEM-VINDO</Text>
-            <Text style={[styles.welcomeSubtitle, { color: C.subtext }]}>{userName}</Text>
+            <View style={[styles.planBadge, { backgroundColor: '#0A2A54' }]}>
+              <Text style={styles.planBadgeText}>BASIC • 3/10</Text>
+            </View>
           </View>
 
           {/* Card do Player */}
@@ -287,25 +326,44 @@ export default function MainScreen({ navigation, route }) {
             </View>
 
             <View style={styles.playerInfo}>
-              <Text style={[styles.playerTitle, { color: C.text }]}>Reproduzir playlist</Text>
-              <Text style={[styles.playerSubtitle, { color: C.subtext }]}>{flatTracks().length || 200} músicas</Text>
-              <View style={[styles.progressTrack, { backgroundColor: dark ? '#1f2937' : '#eef2f7' }]} />
+              <Text style={[styles.playerTitle, { color: C.text }]}>E quando chega a noite - João Gomes</Text>
+              <Text style={[styles.playerSubtitle, { color: C.subtext }]}>Forro</Text>
+              <View style={styles.sliderContainer}>
+                <Slider
+                  style={styles.slider}
+                  minimumValue={0}
+                  maximumValue={100}
+                  value={duration > 0 ? (currentTime / duration) * 100 : 0}
+                  onValueChange={handleSliderChange}
+                  minimumTrackTintColor="#0A2A54"
+                  maximumTrackTintColor={dark ? '#1f2937' : '#eef2f7'}
+                  thumbStyle={{ backgroundColor: '#0A2A54', width: 16, height: 16 }}
+                />
+              </View>
+              <View style={styles.progressTime}>
+                <Text style={[styles.timeText, { color: C.subtext }]}>{formatTime(currentTime)}</Text>
+                <Text style={[styles.timeText, { color: C.subtext }]}>{formatTime(duration)}</Text>
+              </View>
             </View>
 
-            <Pressable
-              style={[styles.playButton, isConnecting && { opacity: 0.6 }]}
-              onPress={() => (current ? handlePlay(current) : fetchPlaylist())}
-              disabled={isConnecting}
-            >
-              {isConnecting ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <MaterialIcons name="play-arrow" size={22} color="#fff" />
-              )}
-              <Text style={styles.playButtonText}>
-                {isPlaying ? 'Reproduzindo' : 'Reproduzir playlist'}
-              </Text>
-            </Pressable>
+            {/* Controles de navegação */}
+            <View style={styles.navigationControls}>
+              <MaterialIcons name="shuffle" size={24} color={C.text} />
+              <MaterialIcons name="skip-previous" size={24} color={C.text} onPress={() => go(-1)} />
+              <Pressable
+                style={[styles.mainPlayButton, isConnecting && { opacity: 0.6 }]}
+                onPress={togglePlayPause}
+                disabled={isConnecting || !current}
+              >
+                {isConnecting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <MaterialIcons name={isPlaying ? "pause" : "play-arrow"} size={28} color="#fff" />
+                )}
+              </Pressable>
+              <MaterialIcons name="skip-next" size={24} color={C.text} onPress={() => go(1)} />
+              <MaterialIcons name="repeat" size={24} color={C.text} />
+            </View>
 
             <Pressable
               style={[styles.secondaryBtn, { borderColor: C.text, backgroundColor: C.card }]}
@@ -334,27 +392,9 @@ export default function MainScreen({ navigation, route }) {
             <PortalButton label="Portal RC News" url={LINKS.portalrc} image={require('./assets/images/ico_portalrc.png')} />
           </View>
 
-          <View style={{ height: 120 }} />
+          <View style={{ height: 40 }} />
         </ScrollView>
 
-        {/* Mini player */}
-        <View style={[styles.miniPlayer, { backgroundColor: C.card, elevation: C.shadow }]}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={[styles.nowTitle, { color: C.text }]} numberOfLines={1}>{current?.title || 'Nome da música'}</Text>
-            <Text style={[styles.nowArtist, { color: C.subtext }]} numberOfLines={1}>{current?.artist || 'Artista'}</Text>
-          </View>
-          <View style={styles.controls}>
-            <MaterialIcons name="skip-previous" size={24} color={C.text} onPress={() => go(-1)} />
-            <Pressable onPress={togglePlayPause} disabled={isConnecting || !current} style={styles.playFab}>
-              {isPlaying ? (
-                <MaterialIcons name="pause" size={26} color="#fff" />
-              ) : (
-                <MaterialIcons name="play-arrow" size={26} color="#fff" />
-              )}
-            </Pressable>
-            <MaterialIcons name="skip-next" size={24} color={C.text} onPress={() => go(1)} />
-          </View>
-        </View>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -373,38 +413,84 @@ const styles = StyleSheet.create({
   topTitle: { fontSize: 13, fontWeight: '800' },
   topIcons: { flexDirection: 'row', gap: 10 },
 
-  content: { paddingHorizontal: 18, paddingBottom: 8 },
+  content: { paddingHorizontal: 18, paddingBottom: 8, flexGrow: 1 },
 
   // Boas-vindas
-  welcomeSection: { alignItems: 'center', marginTop: 8, marginBottom: 22 },
-  logoCircle: {
-    width: 120, height: 120, borderRadius: 60,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 12,
+  welcomeSection: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between',
+    marginTop: 4, 
+    marginBottom: 16 
   },
-  heroLogo: { width: 80, height: 80 },
+  welcomeLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1
+  },
+  logoCircle: {
+    width: 60, height: 60, borderRadius: 30,
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+  },
+  heroLogo: { width: 40, height: 40 },
   heroLogoAvatar: { 
-    width: 120, 
-    height: 120, 
-    borderRadius: 60,
+    width: 60, 
+    height: 60, 
+    borderRadius: 30,
     resizeMode: 'cover'
   },
-  welcomeTitle: { fontSize: 24, fontWeight: '800' },
+  welcomeText: {
+    flex: 1
+  },
+  welcomeTitle: { fontSize: 18, fontWeight: '800' },
   welcomeSubtitle: { fontSize: 14 },
+  planBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  planBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700'
+  },
 
   // Card Player
   playerCard: {
-    borderRadius: 18, padding: 18, marginBottom: 18,
+    borderRadius: 18, padding: 20, marginBottom: 24,
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
       android: { elevation: 3 },
     }),
   },
-  coverContainer: { alignItems: 'center', marginBottom: 12 },
-  coverImage: { width: 120, height: 120, borderRadius: 60 },
-  playerInfo: { alignItems: 'center', marginBottom: 12 },
-  playerTitle: { fontSize: 16, fontWeight: '800' },
+  coverContainer: { alignItems: 'center', marginBottom: 16 },
+  coverImage: { width: 140, height: 140, borderRadius: 70 },
+  playerInfo: { alignItems: 'center', marginBottom: 16 },
+  playerTitle: { fontSize: 16, fontWeight: '800', textAlign: 'center', marginBottom: 4 },
   playerSubtitle: { fontSize: 14, marginBottom: 10 },
-  progressTrack: { height: 6, borderRadius: 8, width: '100%' },
+  sliderContainer: { width: '100%', marginBottom: 8 },
+  slider: { width: '100%', height: 40 },
+  progressTime: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    width: '100%' 
+  },
+  timeText: { fontSize: 12 },
+  navigationControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingHorizontal: 20
+  },
+  mainPlayButton: {
+    backgroundColor: '#0A2A54',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
 
   playButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -413,7 +499,7 @@ const styles = StyleSheet.create({
   playButtonText: { color: '#fff', fontWeight: '800' },
 
   secondaryBtn: {
-    marginTop: 10, borderRadius: 14, paddingVertical: 12, alignItems: 'center',
+    marginTop: 8, borderRadius: 14, paddingVertical: 12, alignItems: 'center',
     borderWidth: 1,
   },
   secondaryBtnText: { fontWeight: '800' },
@@ -422,27 +508,13 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 11, fontWeight: '800', marginBottom: 10, paddingLeft: 2 },
   portalsRow: { flexDirection: 'row', justifyContent: 'space-between' },
   portalItem: {
-    width: '31%', borderRadius: 14, padding: 12, alignItems: 'center',
+    width: '31%', borderRadius: 14, padding: 16, alignItems: 'center',
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
       android: { elevation: 2 },
     }),
   },
-  portalLogo: { width: 56, height: 56, borderRadius: 12, marginBottom: 8 },
+  portalLogo: { width: 64, height: 64, borderRadius: 12, marginBottom: 10 },
   portalText: { fontSize: 12, textAlign: 'center', fontWeight: '700' },
 
-  // Mini Player
-  miniPlayer: {
-    position: 'absolute', left: 18, right: 18, bottom: 20,
-    borderRadius: 16, padding: 12, paddingRight: 50,
-    flexDirection: 'row', alignItems: 'center',
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
-      android: { elevation: 4 },
-    }),
-  },
-  nowTitle: { fontSize: 14, fontWeight: '800' },
-  nowArtist: { fontSize: 12 },
-  controls: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  playFab: { backgroundColor: '#0A2A54', width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
 });

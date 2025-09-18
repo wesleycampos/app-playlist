@@ -9,6 +9,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { saveCurrentUserProfile, getCurrentUserProfile } from './src/api/profile';
 import { getUserId } from './src/auth/session';
+import { supabase } from './supabase';
 
 export default function ProfileEditScreen({ navigation }) {
   const [fullName, setFullName] = useState('');
@@ -38,21 +39,34 @@ export default function ProfileEditScreen({ navigation }) {
         return;
       }
 
-      // Buscar dados do usuário usando API
-      const data = await getCurrentUserProfile();
-      
-      if (data.profile) {
-        setFullName(data.profile.full_name || '');
-        setPhone(data.profile.phone || '');
-        setCity(data.profile.city || '');
-        setUf(data.profile.uf || '');
-        setAvatarUrl(data.profile.avatar_url || '');
-      }
-
-      // Buscar email do usuário autenticado
+      // Buscar email do usuário autenticado primeiro
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setEmail(user.email || '');
+      }
+
+      // Buscar dados do perfil diretamente do Supabase
+      try {
+        const { data: profileData, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('email, full_name, phone, city, uf, avatar_url')
+          .eq('id', userId)
+          .maybeSingle();
+        
+        if (!profileError && profileData) {
+          // Usar email do perfil se disponível, senão usar do auth
+          if (profileData.email) {
+            setEmail(profileData.email);
+          }
+          setFullName(profileData.full_name || '');
+          setPhone(profileData.phone || '');
+          setCity(profileData.city || '');
+          setUf(profileData.uf || '');
+          setAvatarUrl(profileData.avatar_url || '');
+        }
+      } catch (profileError) {
+        console.log('Erro ao buscar perfil do Supabase (não crítico):', profileError.message);
+        // Se falhar, mantém os campos vazios
       }
 
     } catch (error) {
@@ -192,17 +206,31 @@ export default function ProfileEditScreen({ navigation }) {
     try {
       setIsSaving(true);
 
-      const profileData = {
-        full_name: fullName.trim(),
-        phone: phone.trim() || null,
-        city: city.trim() || null,
-        uf: uf.trim() || null,
-        avatar_url: avatarUrl || null,
-        updated_at: new Date().toISOString()
-      };
+      // Obter usuário atual
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        Alert.alert('Erro', 'Usuário não autenticado');
+        return;
+      }
 
-      // Salvar perfil usando API
-      const result = await saveCurrentUserProfile(profileData);
+      // Salvar diretamente no Supabase
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .upsert({
+          id: user.id,
+          email: user.email, // Incluir email obrigatório
+          full_name: fullName.trim(),
+          phone: phone.trim() || null,
+          city: city.trim() || null,
+          uf: uf.trim() || null,
+          avatar_url: avatarUrl || null,
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) {
+        console.error('Erro ao salvar no Supabase:', error);
+        throw new Error(error.message);
+      }
 
       Alert.alert('Sucesso', 'Perfil atualizado com sucesso!', [
         { text: 'OK', onPress: () => navigation.goBack() }
@@ -215,7 +243,7 @@ export default function ProfileEditScreen({ navigation }) {
         Alert.alert('Sessão Expirada', 'Faça login novamente.');
         navigation.navigate('Login');
       } else {
-        Alert.alert('Erro', 'Falha ao salvar perfil. Tente novamente.');
+        Alert.alert('Erro', `Falha ao salvar perfil: ${error.message}`);
       }
     } finally {
       setIsSaving(false);

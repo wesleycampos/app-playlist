@@ -43,15 +43,35 @@ export async function play(uri, onStatus) {
     // Mesma faixa: só dar play (mais rápido)
     if (currentUri && currentUri === uri) {
       if (myId !== requestId) return;
-      await s.playAsync();
+      try {
+        await s.playAsync();
+      } catch (playError) {
+        console.log('Erro ao dar play na mesma faixa:', playError.message);
+      }
       return;
     }
 
     // Nova faixa: para e recarrega no MESMO objeto
-    try { await s.stopAsync(); } catch {}
-    try { await s.unloadAsync(); } catch {}
+    try { 
+      await s.stopAsync(); 
+    } catch (stopError) {
+      console.log('Erro ao parar (não crítico):', stopError.message);
+    }
+    
+    try { 
+      await s.unloadAsync(); 
+    } catch (unloadError) {
+      console.log('Erro ao descarregar (não crítico):', unloadError.message);
+    }
 
     currentUri = uri;
+    
+    // Aguardar um pouco antes de carregar nova faixa
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Verificar se ainda é a requisição atual
+    if (myId !== requestId) return;
+    
     // downloadFirst = false => começa a tocar assim que bufferiza (mais rápido para streaming)
     await s.loadAsync({ uri }, { shouldPlay: true, progressUpdateIntervalMillis: 300 }, false);
 
@@ -85,6 +105,15 @@ export async function stop() {
   try { await sound.unloadAsync(); } catch {}
   // mantém instância viva, mas sem mídia carregada
   currentUri = null;
+}
+
+export async function seekTo(positionMillis) {
+  if (!sound) return;
+  try {
+    await sound.setPositionAsync(positionMillis);
+  } catch (seekError) {
+    console.log('Erro ao buscar posição:', seekError.message);
+  }
 }
 
 export function getLastStatus() {
