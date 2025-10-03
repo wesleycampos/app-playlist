@@ -1,83 +1,93 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Image, TextInput, Pressable, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
-import { auth } from './supabase';
+import { auth, supabase } from './supabase';
 
-export default function LoginScreen({ navigation, onLogin }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+export default function ResetPasswordScreen({ navigation, route }) {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
-  const getErrorMessage = (error) => {
-    const errorMessage = error.toLowerCase();
-    
-    if (errorMessage.includes('invalid login credentials') || 
-        errorMessage.includes('invalid credentials')) {
-      return 'E-mail ou senha incorretos. Verifique seus dados e tente novamente.';
+  // Verificar se há uma sessão válida para reset de senha
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error || !session) {
+          Alert.alert(
+            'Link inválido', 
+            'Este link de recuperação de senha é inválido ou expirou. Solicite um novo link.',
+            [{ text: 'OK', onPress: () => navigation.navigate('Login') }]
+          );
+        }
+      } catch (error) {
+        console.error('Erro ao verificar sessão:', error);
+        navigation.navigate('Login');
+      }
+    };
+
+    checkSession();
+  }, []);
+
+  const validatePassword = (password) => {
+    if (password.length < 6) {
+      return 'A senha deve ter pelo menos 6 caracteres.';
     }
-    
-    if (errorMessage.includes('user not found')) {
-      return 'Usuário não encontrado. Verifique se o e-mail está correto.';
-    }
-    
-    if (errorMessage.includes('email not confirmed')) {
-      return 'E-mail não confirmado. Verifique sua caixa de entrada e confirme seu e-mail.';
-    }
-    
-    if (errorMessage.includes('too many requests')) {
-      return 'Muitas tentativas de login. Aguarde alguns minutos antes de tentar novamente.';
-    }
-    
-    if (errorMessage.includes('network') || errorMessage.includes('connection')) {
-      return 'Erro de conexão. Verifique sua internet e tente novamente.';
-    }
-    
-    if (errorMessage.includes('email')) {
-      return 'E-mail inválido. Verifique o formato do seu e-mail.';
-    }
-    
-    // Mensagem padrão para outros erros
-    return 'Erro ao fazer login. Verifique seus dados e tente novamente.';
+    return null;
   };
 
-  const handleLoginPress = async () => {
-    // Limpar mensagem de erro anterior
+  const handleResetPassword = async () => {
+    // Limpar mensagens anteriores
     setErrorMessage('');
+    setSuccessMessage('');
     
-    if (!email.trim() || !password.trim()) {
+    if (!newPassword.trim() || !confirmPassword.trim()) {
       setErrorMessage('Por favor, preencha todos os campos.');
       return;
     }
 
-    // Validação básica de email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) {
-      setErrorMessage('Por favor, digite um e-mail válido.');
+    // Validar senha
+    const passwordError = validatePassword(newPassword);
+    if (passwordError) {
+      setErrorMessage(passwordError);
+      return;
+    }
+
+    // Verificar se as senhas coincidem
+    if (newPassword !== confirmPassword) {
+      setErrorMessage('As senhas não coincidem.');
       return;
     }
 
     setIsLoading(true);
     
     try {
-      console.log('🔐 Tentando fazer login com:', email);
+      console.log('🔐 Atualizando senha...');
       
-      const result = await auth.signIn(email.trim(), password);
+      const result = await auth.updatePassword(newPassword);
       
       if (result.success) {
-        console.log('✅ Login realizado com sucesso!');
-        setErrorMessage(''); // Limpar erro em caso de sucesso
-        Alert.alert('Sucesso', 'Login realizado com sucesso!');
-        onLogin(email, password); // Chama a função do App.js
+        console.log('✅ Senha atualizada com sucesso!');
+        setSuccessMessage('Senha atualizada com sucesso! Você será redirecionado para o login.');
+        setErrorMessage('');
+        
+        // Redirecionar para login após 2 segundos
+        setTimeout(() => {
+          navigation.navigate('Login');
+        }, 2000);
       } else {
-        console.error('❌ Erro no login:', result.error);
-        const friendlyMessage = getErrorMessage(result.error);
-        setErrorMessage(friendlyMessage);
+        console.error('❌ Erro ao atualizar senha:', result.error);
+        setErrorMessage('Erro ao atualizar senha. Tente novamente.');
+        setSuccessMessage('');
       }
     } catch (error) {
-      console.error('❌ Erro inesperado no login:', error);
-      setErrorMessage('Ocorreu um erro inesperado. Tente novamente em alguns instantes.');
+      console.error('❌ Erro inesperado:', error);
+      setErrorMessage('Ocorreu um erro inesperado. Tente novamente.');
+      setSuccessMessage('');
     } finally {
       setIsLoading(false);
     }
@@ -94,15 +104,17 @@ export default function LoginScreen({ navigation, onLogin }) {
               style={styles.heroImage}
             />
             <View style={styles.heroOverlay}>
-              <Text style={styles.heroTitle}>Login</Text>
+              <Text style={styles.heroTitle}>Nova Senha</Text>
             </View>
           </View>
 
           {/* Área Branca Curvada */}
           <View style={styles.whiteSection}>
             <View style={styles.content}>
-              <Text style={styles.title}>LOGIN</Text>
-              <Text style={styles.subtitle}>Digite os seus dados de acesso nos campos abaixo</Text>
+              <Text style={styles.title}>DEFINIR NOVA SENHA</Text>
+              <Text style={styles.subtitle}>
+                Digite sua nova senha nos campos abaixo
+              </Text>
 
               <View style={styles.form}>
                 {/* Mensagem de erro */}
@@ -113,59 +125,60 @@ export default function LoginScreen({ navigation, onLogin }) {
                   </View>
                 ) : null}
 
+                {/* Mensagem de sucesso */}
+                {successMessage ? (
+                  <View style={styles.successContainer}>
+                    <MaterialIcons name="check-circle-outline" size={20} color="#27ae60" />
+                    <Text style={styles.successText}>{successMessage}</Text>
+                  </View>
+                ) : null}
+
                 <TextInput
                   style={[styles.input, errorMessage && styles.inputError]}
-                  placeholder="telefone ou email"
-                  placeholderTextColor="#9aa6b2"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  value={email}
-                  onChangeText={(text) => {
-                    setEmail(text);
-                    if (errorMessage) setErrorMessage(''); // Limpar erro quando usuário digitar
-                  }}
-                />
-                <TextInput
-                  style={[styles.input, errorMessage && styles.inputError]}
-                  placeholder="Senha"
+                  placeholder="Nova senha"
                   placeholderTextColor="#9aa6b2"
                   secureTextEntry
-                  value={password}
+                  value={newPassword}
                   onChangeText={(text) => {
-                    setPassword(text);
-                    if (errorMessage) setErrorMessage(''); // Limpar erro quando usuário digitar
+                    setNewPassword(text);
+                    if (errorMessage) setErrorMessage('');
+                    if (successMessage) setSuccessMessage('');
+                  }}
+                />
+
+                <TextInput
+                  style={[styles.input, errorMessage && styles.inputError]}
+                  placeholder="Confirmar nova senha"
+                  placeholderTextColor="#9aa6b2"
+                  secureTextEntry
+                  value={confirmPassword}
+                  onChangeText={(text) => {
+                    setConfirmPassword(text);
+                    if (errorMessage) setErrorMessage('');
+                    if (successMessage) setSuccessMessage('');
                   }}
                 />
 
                 <Pressable 
                   style={[styles.primaryBtn, isLoading && styles.primaryBtnDisabled]} 
-                  onPress={handleLoginPress}
+                  onPress={handleResetPassword}
                   disabled={isLoading}
                 >
                   {isLoading ? (
                     <ActivityIndicator size="small" color="#ffffff" />
                   ) : (
-                    <Text style={styles.primaryText}>ENTRAR</Text>
+                    <Text style={styles.primaryText}>ATUALIZAR SENHA</Text>
                   )}
                 </Pressable>
 
-                {/* Botão Esqueci minha senha */}
+                {/* Botão voltar */}
                 <Pressable 
-                  style={styles.forgotPasswordBtn}
-                  onPress={() => navigation.navigate('ForgotPassword')}
+                  style={styles.backBtn}
+                  onPress={() => navigation.navigate('Login')}
                 >
-                  <Text style={styles.forgotPasswordText}>Esqueci minha senha</Text>
+                  <MaterialIcons name="arrow-back" size={20} color="#0A2A54" />
+                  <Text style={styles.backText}>Voltar ao Login</Text>
                 </Pressable>
-
-                {/* Políticas de Privacidade */}
-                <View style={styles.privacySection}>
-                  <Pressable onPress={() => navigation.navigate('PrivacyPolicy')}>
-                    <Text style={styles.privacyText}>Políticas de Privacidade</Text>
-                  </Pressable>
-                  <Pressable onPress={() => navigation.navigate('Register')}>
-                    <Text style={styles.registerLink}>Cadastre-se aqui!</Text>
-                  </Pressable>
-                </View>
               </View>
             </View>
           </View>
@@ -211,7 +224,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 30,
     paddingTop: 30,
     paddingBottom: 40,
-    minHeight: 350,
+    minHeight: 400,
   },
   content: {
     paddingHorizontal: 30,
@@ -267,25 +280,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#8fa2b5',
     opacity: 0.7,
   },
-  privacySection: {
-    alignItems: 'center',
-    gap: 16,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  privacyText: { 
-    color: '#8fa2b5', 
-    fontSize: 14,
-  },
-  registerLink: { 
-    color: '#0A2A54', 
-    fontWeight: '800',
-    fontSize: 16,
-    textDecorationLine: 'underline'
-  },
   errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -304,19 +298,38 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: '500',
   },
+  successContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f9f0',
+    borderColor: '#27ae60',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+    gap: 8,
+  },
+  successText: {
+    color: '#27ae60',
+    fontSize: 14,
+    flex: 1,
+    fontWeight: '500',
+  },
   inputError: {
     borderColor: '#e74c3c',
     backgroundColor: '#fdf2f2',
   },
-  forgotPasswordBtn: {
+  backBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 12,
-    marginBottom: 16,
+    gap: 8,
   },
-  forgotPasswordText: {
+  backText: {
     color: '#0A2A54',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
-    textDecorationLine: 'underline',
   },
 });

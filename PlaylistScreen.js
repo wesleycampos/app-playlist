@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { DeviceEventEmitter } from 'react-native';
 import {
   SafeAreaView,
   View,
@@ -19,16 +20,28 @@ import * as Player from './PlayerService';
 import { API_CONFIG } from './config';
 import { saveCurrentUserPlaylist, resolveCurrentUserPlaylist } from './src/api/playlist';
 import { getUserId } from './src/auth/session';
+import { usePlayer } from './src/context/PlayerContext';
+import { useEffectivePlan } from './src/hooks/useEffectivePlan';
 
 const PLAYLIST_URL = API_CONFIG.playlistUrl;
 
 export default function PlaylistScreen({ navigation, route }) {
+  // Usar o contexto do player
+  const { 
+    currentTrack, 
+    isPlaying, 
+    status, 
+    playTrack, 
+    togglePlayPause, 
+    loadPlaylist,
+    selectedTrackKeys,
+    trackKey,
+    updateSelectedKeys,
+    toggleTrackSelection
+  } = usePlayer();
+  
   const [library, setLibrary] = useState([]);
-  const [currentTrack, setCurrentTrack] = useState(route.params?.currentTrack || null);
-  const [isPlaying, setIsPlaying] = useState(route.params?.isPlaying || false);
-  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [genreIndex, setGenreIndex] = useState(0);
-  const [status, setStatus] = useState('idle'); // idle | connecting | playing | paused | error
   const [searchQuery, setSearchQuery] = useState('');
   const [userPlaylist, setUserPlaylist] = useState([]); // Playlist personalizada do usuário
   const [isLoadingUserPlaylist, setIsLoadingUserPlaylist] = useState(true);
@@ -36,39 +49,69 @@ export default function PlaylistScreen({ navigation, route }) {
   const [planInfo, setPlanInfo] = useState(null);
   const [localLimit, setLocalLimit] = useState(null);
   const chipsRef = useRef(null);
-
-  // Callback para reproduzir música selecionada
-  const onSelect = route.params?.onSelect;
+  
+  // Hook para buscar plano real do usuário
+  const { plan: userPlan, loading: planLoading, refreshPlan } = useEffectivePlan();
 
   useEffect(() => {
     fetchPlaylist();
     loadServerPlaylist(); // Carregar playlist do servidor usando API
   }, []);
 
-  // Marcar músicas da playlist do usuário quando ambos os dados estiverem carregados
+  // Processar músicas customizadas vindas do MainScreen
   useEffect(() => {
-    if (library.length > 0 && userPlaylist.length > 0 && !isLoadingUserPlaylist) {
+    const customTracks = route.params?.customPlaylistTracks;
+    if (customTracks && Array.isArray(customTracks) && customTracks.length > 0) {
+      console.log('🎵 Processando músicas customizadas do MainScreen:', customTracks.length);
+      // Marcar essas músicas como selecionadas quando a biblioteca estiver carregada
+      if (library.length > 0) {
+        markCustomPlaylistTracks(customTracks);
+      }
+    }
+  }, [route.params?.customPlaylistTracks, library, markCustomPlaylistTracks]);
+
+  // Marcar músicas da playlist do usuário quando ambos os dados estiverem carregados
+  // Mas apenas se não há músicas customizadas vindas do MainScreen (evita conflito)
+  useEffect(() => {
+    const customTracks = route.params?.customPlaylistTracks;
+    const hasCustomTracks = customTracks && Array.isArray(customTracks) && customTracks.length > 0;
+    
+    if (library.length > 0 && userPlaylist.length > 0 && !isLoadingUserPlaylist && !hasCustomTracks) {
       markUserPlaylistTracks(userPlaylist);
     }
-  }, [library, userPlaylist, isLoadingUserPlaylist]);
+  }, [library, userPlaylist, isLoadingUserPlaylist, route.params?.customPlaylistTracks, markUserPlaylistTracks]);
 
-  // Atualiza o estado quando os parâmetros da rota mudam
-  useEffect(() => {
-    if (route.params?.currentTrack) {
-      setCurrentTrack(route.params.currentTrack);
-    }
-    if (route.params?.isPlaying !== undefined) {
-      setIsPlaying(route.params.isPlaying);
-    }
-  }, [route.params?.currentTrack, route.params?.isPlaying]);
+  // Removido: estado agora vem do contexto
 
   const fetchPlaylist = async () => {
     try {
       const response = await fetch(PLAYLIST_URL, { cache: 'no-store' });
       const data = await response.json();
+      console.log('🔍 Dados recebidos da playlist:', data);
+      
       const lib = Array.isArray(data?.library) ? data.library : [];
-      setLibrary(lib);
-      if (lib.length && genreIndex >= lib.length) setGenreIndex(0);
+      
+      // Processar categorias para usar o genre como nome
+      const processedLibrary = lib.map(category => {
+        const categoryName = category.genre || 'Categoria';
+        
+        // Criar nome mais amigável substituindo hífens e dividindo palavras
+        const friendlyName = categoryName
+          .replace(/-/g, ' ')
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ');
+        
+        return {
+          ...category,
+          name: friendlyName,
+          originalGenre: categoryName
+        };
+      });
+      
+      console.log('🎵 Categorias processadas:', processedLibrary.map(cat => `${cat.name} (${cat.originalGenre})`));
+      setLibrary(processedLibrary);
+      if (processedLibrary.length && genreIndex >= processedLibrary.length) setGenreIndex(0);
     } catch (error) {
       console.warn('Erro ao carregar playlist:', error);
     }
@@ -79,7 +122,10 @@ export default function PlaylistScreen({ navigation, route }) {
     try {
       setIsLoadingUserPlaylist(true);
       
+      console.log('🔍 Carregando playlist do servidor...');
       const data = await resolveCurrentUserPlaylist(1800);
+      
+      console.log('📊 Dados brutos da API:', data);
       
       if (data.items && data.items.length > 0) {
         // Converter dados do servidor para formato local
@@ -96,7 +142,17 @@ export default function PlaylistScreen({ navigation, route }) {
           cover_image_url: null
         }));
         
+        console.log('🎵 Playlist convertida:', serverTracks.map(t => ({
+          title: t.title,
+          path: t.path,
+          url: t.url,
+          streamUrl: t.streamUrl
+        })));
+        
         setUserPlaylist(serverTracks);
+      } else {
+        console.log('📭 Nenhuma música encontrada na playlist do usuário');
+        setUserPlaylist([]);
       }
     } catch (error) {
       if (error.message.includes('Usuário não autenticado')) {
@@ -104,43 +160,118 @@ export default function PlaylistScreen({ navigation, route }) {
       } else {
         console.error('Erro ao carregar playlist do servidor:', error);
       }
+      setUserPlaylist([]);
     } finally {
       setIsLoadingUserPlaylist(false);
     }
   };
 
   // Marcar automaticamente as músicas que já estão na playlist do usuário
-  const markUserPlaylistTracks = (userTracks) => {
+  const markUserPlaylistTracks = useCallback((userTracks) => {
     const allTracks = library.flatMap(pl => Array.isArray(pl?.tracks) ? pl.tracks : []);
     const newSelectedKeys = new Set();
     
-    userTracks.forEach(userTrack => {
-      // Encontrar a música correspondente na biblioteca geral
-      const matchingTrack = allTracks.find(track => 
-        track.id === userTrack.id || track.url === userTrack.url
-      );
+    console.log('🔍 Marcando playlist do usuário:', {
+      userTracksCount: userTracks.length,
+      libraryTracksCount: allTracks.length,
+      userTracks: userTracks.map(t => ({ title: t.title, path: t.path, url: t.url, streamUrl: t.streamUrl }))
+    });
+    
+    userTracks.forEach((userTrack, userIndex) => {
+      console.log(`🔍 Processando música ${userIndex + 1}: "${userTrack.title}"`);
+      
+      // Tentar diferentes formas de matching
+      const matchingTrack = allTracks.find(track => {
+        const byTitle = track.title === userTrack.title;
+        const byPath = track.path === userTrack.path;
+        const byUrl = track.url === userTrack.url || track.url === userTrack.streamUrl;
+        
+        const hasMatch = byTitle || byPath || byUrl;
+        
+        if (hasMatch) {
+          console.log(`✅ Match encontrado:`, {
+            title: track.title,
+            byTitle, byPath, byUrl,
+            userTitle: userTrack.title,
+            userPath: userTrack.path,
+            userUrl: userTrack.streamUrl
+          });
+        }
+        
+        return hasMatch;
+      });
       
       if (matchingTrack) {
         const trackIndex = allTracks.findIndex(track => 
-          track.id === matchingTrack.id || track.url === matchingTrack.url
+          track.id === matchingTrack.id || track.url === matchingTrack.url || track.title === matchingTrack.title
         );
         const key = trackKey(matchingTrack, trackIndex);
         newSelectedKeys.add(key);
+        console.log(`✅ Marcada música do servidor: ${userTrack.title} (key: ${key}, index: ${trackIndex})`);
+      } else {
+        console.log(`❌ Música não encontrada na biblioteca: "${userTrack.title}"`);
       }
     });
     
-    setSelectedKeys(newSelectedKeys);
-  };
+    console.log(`🎯 Total de músicas marcadas: ${newSelectedKeys.size} de ${userTracks.length}`);
+    updateSelectedKeys(newSelectedKeys);
+  }, [library, trackKey, updateSelectedKeys]);
 
-  // chave estável para itens (id || url)
-  const trackKey = (t, idx) => String(t?.id ?? t?.url ?? `track-${idx}`);
+  // Marcar músicas da playlist customizada vindas do MainScreen
+  const markCustomPlaylistTracks = useCallback((customTracks) => {
+    const allTracks = library.flatMap(pl => Array.isArray(pl?.tracks) ? pl.tracks : []);
+    const newSelectedKeys = new Set();
+    
+    console.log('🔍 Iniciando marcação de músicas customizadas:', {
+      customTracksCount: customTracks.length,
+      libraryTracksCount: allTracks.length,
+      currentSelected: selectedTrackKeys.size
+    });
+    
+    customTracks.forEach((customTrack, idx) => {
+      console.log(`🔍 Música ${idx + 1}:`, {
+        title: customTrack.title,
+        id: customTrack.id,
+        url: customTrack.url
+      });
+      
+      // Encontrar a música correspondente na biblioteca geral
+      const matchingTrack = allTracks.find(track => 
+        track.id === customTrack.id || track.url === customTrack.url || track.title === customTrack.title
+      );
+      
+      if (matchingTrack) {
+        // Usar o índice direto da função findIndex para manter consistência
+        const trackIndex = allTracks.findIndex(track => 
+          track.id === matchingTrack.id || track.url === matchingTrack.url || track.title === matchingTrack.title
+        );
+        const key = trackKey(matchingTrack, trackIndex);
+        newSelectedKeys.add(key);
+        console.log(`✅ Encontrada e marcada: ${customTrack.title} (key: ${key}, index: ${trackIndex})`);
+      } else {
+        console.log(`❌ Música não encontrada na biblioteca: ${customTrack.title}`);
+      }
+    });
+    
+    updateSelectedKeys(newSelectedKeys);
+    console.log('✅ Finalizada marcação:', newSelectedKeys.size, 'músicas da playlist customizada');
+  }, [library, trackKey, updateSelectedKeys]);
 
   const toggleSelect = async (track, idxInSection) => {
+    // Verificar se o plano está bloqueado
+    if (isBlockedPlan) {
+      Alert.alert(
+        'Plano Bloqueado',
+        'Seu plano atual está bloqueado. Entre em contato conosco para ativá-lo.',
+        [{ text: 'OK', style: 'default' }]
+      );
+      return;
+    }
+    
     const key = trackKey(track, idxInSection);
-    const copy = new Set(selectedKeys);
     
     // Se está tentando adicionar uma música e já atingiu o limite
-    if (!copy.has(key) && localLimit && selectedKeys.size >= localLimit) {
+    if (!selectedTrackKeys.has(key) && localLimit && selectedTrackKeys.size >= localLimit) {
       Alert.alert(
         'Limite Atingido',
         `Você já selecionou ${localLimit} músicas. Este é o limite do seu plano atual.\n\nPara adicionar mais músicas, entre em contato conosco para fazer upgrade do seu plano.`,
@@ -149,16 +280,16 @@ export default function PlaylistScreen({ navigation, route }) {
       return;
     }
     
-    if (copy.has(key)) copy.delete(key); else copy.add(key);
-    setSelectedKeys(copy);
+    // Usar a função do contexto para alternar seleção
+    toggleTrackSelection(key);
     
     // Se a música foi selecionada e não é a atual, reproduz automaticamente
-    if (copy.has(key) && (!currentTrack || currentTrack.id !== track.id)) {
+    if (!selectedTrackKeys.has(key) && (!currentTrack || currentTrack.id !== track.id)) {
       playTrack(track);
     }
     
     // Resolver automaticamente quando há músicas selecionadas
-    if (copy.size > 0) {
+    if (selectedTrackKeys.size > 0) {
       try {
         const data = await resolveCurrentUserPlaylist(1800);
         console.log('Playlist resolvida automaticamente:', data.items?.length || 0, 'músicas');
@@ -168,68 +299,9 @@ export default function PlaylistScreen({ navigation, route }) {
     }
   };
 
-  // Função para reproduzir uma música individual
-  const playTrack = async (track) => {
-    if (!track) return;
-    
-    setCurrentTrack(track);
-    setIsPlaying(true);
-    setStatus('connecting');
-    
-    try {
-      await Player.play(track.url, (playbackStatus) => {
-        if (!playbackStatus || !playbackStatus.isLoaded) return;
-        
-        if (playbackStatus.didJustFinish) {
-          setIsPlaying(false);
-          setStatus('idle');
-          return;
-        }
-        
-        if (playbackStatus.isBuffering) {
-          setStatus('connecting');
-          return;
-        }
-        
-        if (playbackStatus.isPlaying) {
-          setStatus('playing');
-          setIsPlaying(true);
-        } else {
-          setStatus('paused');
-          setIsPlaying(false);
-        }
-      });
-    } catch (error) {
-      console.warn('Erro ao reproduzir música:', error);
-      setStatus('error');
-      setIsPlaying(false);
-    }
-  };
+  // Funções de reprodução agora vêm do contexto
 
-  // Função para pausar/retomar reprodução
-  const togglePlayPause = async () => {
-    if (!currentTrack) return;
-    
-    if (isPlaying) {
-      await Player.pause();
-      setIsPlaying(false);
-      setStatus('paused');
-    } else {
-      await Player.resume((playbackStatus) => {
-        if (!playbackStatus || !playbackStatus.isLoaded) return;
-        
-        if (playbackStatus.isPlaying) {
-          setStatus('playing');
-          setIsPlaying(true);
-        } else {
-          setStatus('paused');
-          setIsPlaying(false);
-        }
-      });
-    }
-  };
-
-  const selectedCount = selectedKeys.size;
+  const selectedCount = selectedTrackKeys.size;
 
   const allTracksInOrder = useMemo(
     () => library.flatMap(pl => Array.isArray(pl?.tracks) ? pl.tracks : []),
@@ -254,10 +326,21 @@ export default function PlaylistScreen({ navigation, route }) {
 
   const buildSelection = () => {
     const queue = [];
+    console.log('🔧 Construindo seleção:', {
+      totalTracksInOrder: allTracksInOrder.length,
+      selectedKeysCount: selectedTrackKeys.size,
+      selectedKeys: Array.from(selectedTrackKeys)
+    });
+    
     allTracksInOrder.forEach((t, idx) => {
       const key = trackKey(t, idx);
-      if (selectedKeys.has(key)) queue.push(t);
+      if (selectedTrackKeys.has(key)) {
+        queue.push(t);
+        console.log(`✅ Música incluída na seleção: ${t.title} (key: ${key})`);
+      }
     });
+    
+    console.log('🎵 Seleção final:', queue.length, 'músicas');
     return queue;
   };
 
@@ -284,13 +367,24 @@ export default function PlaylistScreen({ navigation, route }) {
 
       const data = await saveCurrentUserPlaylist(paths);
 
+      // Usar o contexto para carregar a playlist
+      loadPlaylist(queue);
+
+      // Emitir evento para informar à MainScreen que a playlist foi salva
+      DeviceEventEmitter.emit('playlistSaved', {
+        success: true,
+        saved: data.saved,
+        plan: data.plan,
+        limit: data.limit
+      });
+
       Alert.alert(
         'Sucesso!', 
         `Playlist salva com ${data.saved} músicas!\nPlano: ${data.plan}\nLimite: ${data.limit}`,
         [
           {
             text: 'OK',
-            onPress: () => navigation.navigate('Main', { customQueue: queue })
+            onPress: () => navigation.navigate('Main')
           }
         ]
       );
@@ -352,13 +446,35 @@ export default function PlaylistScreen({ navigation, route }) {
     loadPlanInfo();
   }, []);
 
+  // Adicionar listener para forçar refresh do plano periodicamente
+  useEffect(() => {
+    const intervalRef = setInterval(() => {
+      console.log('🔄 PlaylistScreen: Refresh automático do plano');
+      refreshPlan();
+    }, 30000); // Refresh a cada 30 segundos
+
+    return () => {
+      clearInterval(intervalRef);
+    };
+  }, [refreshPlan]);
+
   // Verificar se o limite foi atingido
-  const isLimitReached = localLimit && selectedKeys.size >= localLimit;
+  const currentLimit = localLimit || userPlan?.songLimit || planInfo?.limit || 0;
+  const isLimitReached = currentLimit && selectedTrackKeys.size >= currentLimit;
+  
+  // Verificar se o plano é bloqueado
+  const isBlockedPlan = userPlan?.planCode === 'BLOCKED' || userPlan?.planName?.toUpperCase().includes('BLOQUEADO');
 
   const renderTrackItem = ({ item, index }) => {
+    // Sempre usar o índice fornecido pelo FlatList, que já está correto para a lista filtrada
     const key = trackKey(item, index);
-    const selected = selectedKeys.has(key);
+    const selected = selectedTrackKeys.has(key);
     const isCurrentTrack = currentTrack?.id === item?.id || currentTrack?.url === item?.url;
+    
+    // Log de debug para renderização da música
+    if (selected) {
+      console.log(`🎵 Renderizando música selecionada: ${item.title} (key: ${key})`);
+    }
 
     return (
       <Pressable
@@ -392,6 +508,16 @@ export default function PlaylistScreen({ navigation, route }) {
           <TouchableOpacity
             style={styles.quickPlayButton}
             onPress={() => {
+              // Verificar se o plano está bloqueado
+              if (isBlockedPlan) {
+                Alert.alert(
+                  'Plano Bloqueado',
+                  'Seu plano atual está bloqueado. Entre em contato conosco para ativá-lo.',
+                  [{ text: 'OK', style: 'default' }]
+                );
+                return;
+              }
+              
               if (isCurrentTrack) {
                 togglePlayPause();
               } else {
@@ -463,19 +589,19 @@ export default function PlaylistScreen({ navigation, route }) {
         {planInfo && (
           <View style={styles.planHeaderContainer}>
             <View style={styles.planHeaderContent}>
-              <View style={styles.planBadge}>
-                <Text style={styles.planBadgeText}>{(planInfo.plan || 'FREE').toUpperCase()}</Text>
+              <View style={[styles.planBadge, isBlockedPlan && styles.blockedPlanBadge]}>
+                <Text style={styles.planBadgeText}>{(userPlan?.planName || planInfo.plan || 'FREE').toUpperCase()}</Text>
               </View>
               <View style={styles.usageContainer}>
-                <Text style={styles.usageText}>
-                  {planInfo.total || 0}/{localLimit || planInfo.limit || 0} músicas
-                </Text>
+              <Text style={styles.usageText}>
+                {isBlockedPlan ? '0/0 músicas' : `${selectedTrackKeys.size}/${localLimit || userPlan?.songLimit || planInfo?.limit || 0} músicas`}
+              </Text>
                 <View style={styles.usageBar}>
                   <View 
                     style={[
                       styles.usageProgress, 
                       { 
-                        width: `${Math.min(((planInfo.total || 0) / (localLimit || planInfo.limit || 1)) * 100, 100)}%`,
+                        width: `${Math.min((selectedTrackKeys.size / (localLimit || userPlan?.songLimit || planInfo?.limit || 1)) * 100, 100)}%`,
                         backgroundColor: isLimitReached ? '#ff6b6b' : '#34C759'
                       }
                     ]} 
@@ -581,12 +707,12 @@ export default function PlaylistScreen({ navigation, route }) {
       {/* Botão Concluir Fixo */}
       <View style={styles.fixedConcludeContainer}>
         <Pressable 
-          style={[styles.concludeBtn, (saving || isLimitReached) && styles.disabledButton]} 
+          style={[styles.concludeBtn, (saving || isLimitReached || isBlockedPlan) && styles.disabledButton]} 
           onPress={handleConclude}
-          disabled={saving || isLimitReached}
+          disabled={saving || isLimitReached || isBlockedPlan}
         >
           <Text style={styles.concludeText}>
-            {isLimitReached ? 'LIMITE ATINGIDO' : (saving ? 'SALVANDO...' : 'CONCLUIR')}
+            {isBlockedPlan ? 'PLANO BLOQUEADO' : (isLimitReached ? 'LIMITE ATINGIDO' : (saving ? 'SALVANDO...' : 'CONCLUIR'))}
           </Text>
         </Pressable>
       </View>
@@ -751,6 +877,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  blockedPlanBadge: {
+    backgroundColor: '#dc3545', // Vermelho para plano bloqueado
   },
   usageContainer: {
     flex: 1,

@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "RC PLAY",
-    "slug": "rc-play",
+    "slug": "sucesso-fm",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -33,7 +33,8 @@
     },
     "plugins": [
       "expo-web-browser",
-      "expo-asset"
+      "expo-asset",
+      "expo-font"
     ]
   }
 }

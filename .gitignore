@@ -115,3 +115,6 @@ Thumbs.db
 config.py
 secrets.py
 node_modules
+
+# Expo
+.expo/

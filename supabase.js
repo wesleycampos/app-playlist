@@ -89,6 +89,36 @@ export const auth = {
       return { success: false, error: error.message };
     }
   },
+
+  // Reset de senha
+  resetPassword: async (email) => {
+    try {
+      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: 'sucesso-fm://reset-password', // URL customizada do app
+      });
+      
+      if (error) throw error;
+      return { success: true, data };
+    } catch (error) {
+      console.error('Erro ao resetar senha:', error.message);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Atualizar senha (após confirmação por email)
+  updatePassword: async (newPassword) => {
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+      
+      if (error) throw error;
+      return { success: true, data };
+    } catch (error) {
+      console.error('Erro ao atualizar senha:', error.message);
+      return { success: false, error: error.message };
+    }
+  },
 };
 
 // Funções para gerenciar dados dos usuários

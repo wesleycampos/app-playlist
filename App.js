@@ -3,9 +3,13 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, Text, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
 
+import { PlayerProvider } from './src/context/PlayerContext';
+
 import WelcomeScreen from './WelcomeScreen';
 import LoginScreen from './LoginScreen';
 import RegisterScreen from './RegisterScreen';
+import ForgotPasswordScreen from './ForgotPasswordScreen';
+import ResetPasswordScreen from './ResetPasswordScreen';
 import PrivacyPolicyScreen from './PrivacyPolicyScreen';
 import TermsOfServiceScreen from './TermsOfServiceScreen';
 import SucessoFMWebView from './SucessoFMWebView';
@@ -163,35 +167,39 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {isLoggedIn ? (
-          <>
-            <Stack.Screen name="Main" component={MainScreen} />
-            <Stack.Screen name="Playlist" component={PlaylistScreen} />
-            <Stack.Screen name="Menu">
-              {props => <MenuScreen {...props} onLogout={handleLogout} />}
-            </Stack.Screen>
-            <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
-            <Stack.Screen name="SucessoFMWebView" component={SucessoFMWebView} />
-            <Stack.Screen name="RCPlayTVWebView" component={RCPlayTVWebView} />
-            <Stack.Screen name="PortalRCNewsWebView" component={PortalRCNewsWebView} />
-          </>
-        ) : (
-          <>
-            <Stack.Screen name="Welcome" component={WelcomeScreen} />
-            <Stack.Screen name="Login">
-              {props => <LoginScreen {...props} onLogin={handleLogin} />}
-            </Stack.Screen>
-            <Stack.Screen name="Register">
-              {props => <RegisterScreen {...props} onRegister={handleRegister} />}
-            </Stack.Screen>
-            <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
-            <Stack.Screen name="TermsOfService" component={TermsOfServiceScreen} />
-          </>
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
+    <PlayerProvider>
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          {isLoggedIn ? (
+            <>
+              <Stack.Screen name="Main" component={MainScreen} />
+              <Stack.Screen name="Playlist" component={PlaylistScreen} />
+              <Stack.Screen name="Menu">
+                {props => <MenuScreen {...props} onLogout={handleLogout} />}
+              </Stack.Screen>
+              <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
+              <Stack.Screen name="SucessoFMWebView" component={SucessoFMWebView} />
+              <Stack.Screen name="RCPlayTVWebView" component={RCPlayTVWebView} />
+              <Stack.Screen name="PortalRCNewsWebView" component={PortalRCNewsWebView} />
+            </>
+          ) : (
+            <>
+              <Stack.Screen name="Welcome" component={WelcomeScreen} />
+              <Stack.Screen name="Login">
+                {props => <LoginScreen {...props} onLogin={handleLogin} />}
+              </Stack.Screen>
+              <Stack.Screen name="Register">
+                {props => <RegisterScreen {...props} onRegister={handleRegister} />}
+              </Stack.Screen>
+              <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+              <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+              <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
+              <Stack.Screen name="TermsOfService" component={TermsOfServiceScreen} />
+            </>
+          )}
+        </Stack.Navigator>
+      </NavigationContainer>
+    </PlayerProvider>
   );
 }
 
