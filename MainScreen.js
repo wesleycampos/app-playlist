@@ -47,18 +47,7 @@ export default function MainScreen({ navigation, route }) {
     setIsManualSeeking
   } = usePlayer();
 
-  const { plan: userPlan, loading: isLoadingPlan, refreshPlan } = useEffectivePlan();
-
-  // Debug: Log do plano do usuário
-  useEffect(() => {
-    console.log('🏠 MainScreen - Plano do usuário:', {
-      userPlan,
-      isLoadingPlan,
-      planName: userPlan?.planName,
-      planCode: userPlan?.planCode,
-      songLimit: userPlan?.songLimit
-    });
-  }, [userPlan, isLoadingPlan]);
+  const { plan: userPlan, loading: isLoadingPlan } = useEffectivePlan();
 
   // Tema: começa no tema do sistema, mas o usuário pode alternar no ícone
   const systemIsDark = useColorScheme() === 'dark';
@@ -203,10 +192,7 @@ export default function MainScreen({ navigation, route }) {
       if (userName === 'Carregando...') {
         fetchUserName();
       }
-      // Recarregar plano quando volta para a tela principal
-      console.log('🔄 MainScreen: Recarregando plano ao ganhar foco');
-      refreshPlan();
-    }, [fetchUserName, userName, refreshPlan])
+    }, [fetchUserName, userName])
   );
 
   // Cleanup dos timeouts quando o componente desmontar
