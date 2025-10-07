@@ -354,7 +354,7 @@ export default function MainScreen({ navigation, route }) {
             </View>
               <View style={[styles.planBadge, { backgroundColor: '#0A2A54' }]}>
                 <Text style={styles.planBadgeText}>
-                  {isLoadingPlan ? 'CARREGANDO...' : `${userPlan.planName || 'BASIC'} • ${playlist.length}/${userPlan.songLimit || 10}`}
+                  {isLoadingPlan ? 'CARREGANDO...' : (userPlan.planName || 'BASIC')}
                 </Text>
               </View>
           </View>
