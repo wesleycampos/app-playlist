@@ -54,7 +54,16 @@ export default function App() {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.log('ℹ️  Nenhuma sessão ativa:', error.message);
+          // Se o erro for relacionado a refresh token inválido, limpar a sessão
+          if (error.message.includes('Invalid Refresh Token') || 
+              error.message.includes('Refresh Token Not Found')) {
+            console.log('🔄 Token de refresh inválido, limpando sessão...');
+            await supabase.auth.signOut();
+            console.log('ℹ️  Sessão limpa, usuário precisa fazer login novamente');
+          } else {
+            console.log('ℹ️  Erro ao verificar sessão:', error.message);
+          }
+          setSupabaseStatus('connected');
         } else if (session) {
           console.log('✅ Sessão ativa encontrada:', session.user.email);
           setIsLoggedIn(true);

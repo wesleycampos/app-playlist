@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { DeviceEventEmitter } from 'react-native';
 import {
   SafeAreaView,
   View,
@@ -87,31 +86,9 @@ export default function PlaylistScreen({ navigation, route }) {
     try {
       const response = await fetch(PLAYLIST_URL, { cache: 'no-store' });
       const data = await response.json();
-      console.log('🔍 Dados recebidos da playlist:', data);
-      
       const lib = Array.isArray(data?.library) ? data.library : [];
-      
-      // Processar categorias para usar o genre como nome
-      const processedLibrary = lib.map(category => {
-        const categoryName = category.genre || 'Categoria';
-        
-        // Criar nome mais amigável substituindo hífens e dividindo palavras
-        const friendlyName = categoryName
-          .replace(/-/g, ' ')
-          .split(' ')
-          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-          .join(' ');
-        
-        return {
-          ...category,
-          name: friendlyName,
-          originalGenre: categoryName
-        };
-      });
-      
-      console.log('🎵 Categorias processadas:', processedLibrary.map(cat => `${cat.name} (${cat.originalGenre})`));
-      setLibrary(processedLibrary);
-      if (processedLibrary.length && genreIndex >= processedLibrary.length) setGenreIndex(0);
+      setLibrary(lib);
+      if (lib.length && genreIndex >= lib.length) setGenreIndex(0);
     } catch (error) {
       console.warn('Erro ao carregar playlist:', error);
     }
@@ -122,10 +99,7 @@ export default function PlaylistScreen({ navigation, route }) {
     try {
       setIsLoadingUserPlaylist(true);
       
-      console.log('🔍 Carregando playlist do servidor...');
       const data = await resolveCurrentUserPlaylist(1800);
-      
-      console.log('📊 Dados brutos da API:', data);
       
       if (data.items && data.items.length > 0) {
         // Converter dados do servidor para formato local
@@ -142,17 +116,7 @@ export default function PlaylistScreen({ navigation, route }) {
           cover_image_url: null
         }));
         
-        console.log('🎵 Playlist convertida:', serverTracks.map(t => ({
-          title: t.title,
-          path: t.path,
-          url: t.url,
-          streamUrl: t.streamUrl
-        })));
-        
         setUserPlaylist(serverTracks);
-      } else {
-        console.log('📭 Nenhuma música encontrada na playlist do usuário');
-        setUserPlaylist([]);
       }
     } catch (error) {
       if (error.message.includes('Usuário não autenticado')) {
@@ -160,7 +124,6 @@ export default function PlaylistScreen({ navigation, route }) {
       } else {
         console.error('Erro ao carregar playlist do servidor:', error);
       }
-      setUserPlaylist([]);
     } finally {
       setIsLoadingUserPlaylist(false);
     }
@@ -171,49 +134,22 @@ export default function PlaylistScreen({ navigation, route }) {
     const allTracks = library.flatMap(pl => Array.isArray(pl?.tracks) ? pl.tracks : []);
     const newSelectedKeys = new Set();
     
-    console.log('🔍 Marcando playlist do usuário:', {
-      userTracksCount: userTracks.length,
-      libraryTracksCount: allTracks.length,
-      userTracks: userTracks.map(t => ({ title: t.title, path: t.path, url: t.url, streamUrl: t.streamUrl }))
-    });
-    
-    userTracks.forEach((userTrack, userIndex) => {
-      console.log(`🔍 Processando música ${userIndex + 1}: "${userTrack.title}"`);
-      
-      // Tentar diferentes formas de matching
-      const matchingTrack = allTracks.find(track => {
-        const byTitle = track.title === userTrack.title;
-        const byPath = track.path === userTrack.path;
-        const byUrl = track.url === userTrack.url || track.url === userTrack.streamUrl;
-        
-        const hasMatch = byTitle || byPath || byUrl;
-        
-        if (hasMatch) {
-          console.log(`✅ Match encontrado:`, {
-            title: track.title,
-            byTitle, byPath, byUrl,
-            userTitle: userTrack.title,
-            userPath: userTrack.path,
-            userUrl: userTrack.streamUrl
-          });
-        }
-        
-        return hasMatch;
-      });
+    userTracks.forEach(userTrack => {
+      // Encontrar a música correspondente na biblioteca geral
+      const matchingTrack = allTracks.find(track => 
+        track.id === userTrack.id || track.url === userTrack.url
+      );
       
       if (matchingTrack) {
         const trackIndex = allTracks.findIndex(track => 
-          track.id === matchingTrack.id || track.url === matchingTrack.url || track.title === matchingTrack.title
+          track.id === matchingTrack.id || track.url === matchingTrack.url
         );
         const key = trackKey(matchingTrack, trackIndex);
         newSelectedKeys.add(key);
         console.log(`✅ Marcada música do servidor: ${userTrack.title} (key: ${key}, index: ${trackIndex})`);
-      } else {
-        console.log(`❌ Música não encontrada na biblioteca: "${userTrack.title}"`);
       }
     });
     
-    console.log(`🎯 Total de músicas marcadas: ${newSelectedKeys.size} de ${userTracks.length}`);
     updateSelectedKeys(newSelectedKeys);
   }, [library, trackKey, updateSelectedKeys]);
 
@@ -370,14 +306,6 @@ export default function PlaylistScreen({ navigation, route }) {
       // Usar o contexto para carregar a playlist
       loadPlaylist(queue);
 
-      // Emitir evento para informar à MainScreen que a playlist foi salva
-      DeviceEventEmitter.emit('playlistSaved', {
-        success: true,
-        saved: data.saved,
-        plan: data.plan,
-        limit: data.limit
-      });
-
       Alert.alert(
         'Sucesso!', 
         `Playlist salva com ${data.saved} músicas!\nPlano: ${data.plan}\nLimite: ${data.limit}`,
@@ -446,20 +374,19 @@ export default function PlaylistScreen({ navigation, route }) {
     loadPlanInfo();
   }, []);
 
-  // Adicionar listener para forçar refresh do plano periodicamente
-  useEffect(() => {
-    const intervalRef = setInterval(() => {
-      console.log('🔄 PlaylistScreen: Refresh automático do plano');
-      refreshPlan();
-    }, 30000); // Refresh a cada 30 segundos
-
-    return () => {
-      clearInterval(intervalRef);
-    };
-  }, [refreshPlan]);
+  // Função para formatar nome da categoria (pasta)
+  const formatCategoryName = (genre) => {
+    if (!genre) return 'Categoria';
+    
+    // Converter hífens em espaços e capitalizar
+    return genre
+      .split('-')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
 
   // Verificar se o limite foi atingido
-  const currentLimit = localLimit || userPlan?.songLimit || planInfo?.limit || 0;
+  const currentLimit = userPlan?.songLimit || planInfo?.limit || localLimit || 0;
   const isLimitReached = currentLimit && selectedTrackKeys.size >= currentLimit;
   
   // Verificar se o plano é bloqueado
@@ -543,7 +470,7 @@ export default function PlaylistScreen({ navigation, route }) {
     );
   };
 
-  const currentPlaylist = library[genreIndex] || { name: '...', tracks: [] };
+  const currentPlaylist = library[genreIndex] || { genre: '...', tracks: [] };
   const currentTracks = Array.isArray(currentPlaylist.tracks) ? currentPlaylist.tracks : [];
 
   const scrollChipTo = (nextIdx) => {
@@ -589,19 +516,19 @@ export default function PlaylistScreen({ navigation, route }) {
         {planInfo && (
           <View style={styles.planHeaderContainer}>
             <View style={styles.planHeaderContent}>
-              <View style={[styles.planBadge, isBlockedPlan && styles.blockedPlanBadge]}>
-                <Text style={styles.planBadgeText}>{(userPlan?.planName || planInfo.plan || 'FREE').toUpperCase()}</Text>
-              </View>
+               <View style={[styles.planBadge, isBlockedPlan && styles.blockedPlanBadge]}>
+                 <Text style={styles.planBadgeText}>{(userPlan?.planName || planInfo?.plan || 'FREE').toUpperCase()}</Text>
+               </View>
               <View style={styles.usageContainer}>
-              <Text style={styles.usageText}>
-                {isBlockedPlan ? '0/0 músicas' : `${selectedTrackKeys.size}/${localLimit || userPlan?.songLimit || planInfo?.limit || 0} músicas`}
-              </Text>
+                <Text style={styles.usageText}>
+                  {isBlockedPlan ? '0/0 músicas' : `${selectedTrackKeys.size}/${userPlan?.songLimit || planInfo?.limit || localLimit || 0} músicas`}
+                </Text>
                 <View style={styles.usageBar}>
                   <View 
                     style={[
                       styles.usageProgress, 
                       { 
-                        width: `${Math.min((selectedTrackKeys.size / (localLimit || userPlan?.songLimit || planInfo?.limit || 1)) * 100, 100)}%`,
+                        width: `${Math.min((selectedTrackKeys.size / (userPlan?.songLimit || planInfo?.limit || localLimit || 1)) * 100, 100)}%`,
                         backgroundColor: isLimitReached ? '#ff6b6b' : '#34C759'
                       }
                     ]} 
@@ -662,12 +589,12 @@ export default function PlaylistScreen({ navigation, route }) {
               >
                 {library.map((pl, i) => (
                   <Pressable
-                    key={`${pl?.name ?? 'pl'}-${i}`}
+                    key={`${pl?.genre ?? 'pl'}-${i}`}
                     onPress={() => scrollChipTo(i)}
                     style={[styles.chip, i === genreIndex && styles.chipActive]}
                   >
                     <Text style={[styles.chipText, i === genreIndex && styles.chipTextActive]}>
-                      {pl?.name || `Categoria ${i + 1}`}
+                      {formatCategoryName(pl?.genre) || `Categoria ${i + 1}`}
                     </Text>
                   </Pressable>
                 ))}
@@ -705,16 +632,16 @@ export default function PlaylistScreen({ navigation, route }) {
       </SafeAreaView>
 
       {/* Botão Concluir Fixo */}
-      <View style={styles.fixedConcludeContainer}>
-        <Pressable 
-          style={[styles.concludeBtn, (saving || isLimitReached || isBlockedPlan) && styles.disabledButton]} 
-          onPress={handleConclude}
-          disabled={saving || isLimitReached || isBlockedPlan}
-        >
-          <Text style={styles.concludeText}>
-            {isBlockedPlan ? 'PLANO BLOQUEADO' : (isLimitReached ? 'LIMITE ATINGIDO' : (saving ? 'SALVANDO...' : 'CONCLUIR'))}
-          </Text>
-        </Pressable>
+        <View style={styles.fixedConcludeContainer}>
+          <Pressable 
+            style={[styles.concludeBtn, (saving || isLimitReached || isBlockedPlan) && styles.disabledButton]} 
+            onPress={handleConclude}
+            disabled={saving || isLimitReached || isBlockedPlan}
+          >
+            <Text style={styles.concludeText}>
+              {isBlockedPlan ? 'PLANO BLOQUEADO' : (isLimitReached ? 'LIMITE ATINGIDO' : (saving ? 'SALVANDO...' : 'CONCLUIR'))}
+            </Text>
+          </Pressable>
       </View>
     </LinearGradient>
   );

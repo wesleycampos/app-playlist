@@ -82,7 +82,15 @@ export const auth = {
   getSession: async () => {
     try {
       const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) throw error;
+      if (error) {
+        // Se o erro for relacionado a refresh token inválido, limpar a sessão
+        if (error.message.includes('Invalid Refresh Token') || 
+            error.message.includes('Refresh Token Not Found')) {
+          console.log('🔄 Token de refresh inválido, limpando sessão...');
+          await supabase.auth.signOut();
+        }
+        throw error;
+      }
       return { success: true, session };
     } catch (error) {
       console.error('Erro ao obter sessão:', error.message);

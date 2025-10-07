@@ -14,7 +14,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as Player from './PlayerService';
 import { supabase, users } from './supabase';
 import { usePlayer } from './src/context/PlayerContext';
-import { resolveCurrentUserPlaylist } from './src/api/playlist';
 import { useEffectivePlan } from './src/hooks/useEffectivePlan';
 
 const PLAYLIST_URL = 'https://musicas.radiosucessobrasilia.com.br/playlist.php';
@@ -42,12 +41,13 @@ export default function MainScreen({ navigation, route }) {
     status, 
     isCustomQueue, 
     isManualSeeking,
-    loadPlaylist,
     togglePlayPause, 
     goToNext, 
     goToPrevious,
     setIsManualSeeking
   } = usePlayer();
+
+  const { plan: userPlan, loading: isLoadingPlan } = useEffectivePlan();
 
   // Tema: começa no tema do sistema, mas o usuário pode alternar no ícone
   const systemIsDark = useColorScheme() === 'dark';
@@ -60,60 +60,7 @@ export default function MainScreen({ navigation, route }) {
   const [duration, setDuration] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
-  const [hasExistingPlaylist, setHasExistingPlaylist] = useState(false);
-  const [playlistCheckLoading, setPlaylistCheckLoading] = useState(true);
   const fetchUserNameRef = useRef(null);
-  
-  // Hook para buscar plano real do usuário
-  const { plan: userPlan, loading: planLoading, refreshPlan } = useEffectivePlan();
-
-  const refreshPlanAndPlaylist = useCallback(async () => {
-    console.log('🔄 Atualizando plano e playlist...');
-    setPlaylistCheckLoading(true);
-    await refreshPlan();
-    await checkExistingPlaylist(); // Já inclui o carregamento da playlist no contexto
-    setPlaylistCheckLoading(false);
-  }, [refreshPlan, checkExistingPlaylist]);
-
-  // Carregar playlist salva do usuário para reprodução na MainScreen
-  const loadUserPlaylistForMain = useCallback(async () => {
-    try {
-      console.log('🎵 Carregando playlist do usuário para tela principal...');
-      const data = await resolveCurrentUserPlaylist(1800);
-      
-      if (data.items && data.items.length > 0) {
-        const serverTracks = data.items.map((item, index) => ({
-          trackKey: `server_${index}`,
-          id: `server_${index}`,
-          title: item.title,
-          path: item.path,
-          streamUrl: item.streamUrl,
-          duration: '0:00',
-          artist: 'Artista Desconhecido',
-          album: 'Álbum Desconhecido',
-          url: item.streamUrl, // Usar streamUrl diretamente
-          cover_image_url: null
-        }));
-        
-        console.log('🎵 Playlist carregada para MainScreen:', serverTracks.length, 'músicas');
-        console.log('🔍 Primeira música:', {
-          title: serverTracks[0]?.title,
-          url: serverTracks[0]?.url,
-          streamUrl: serverTracks[0]?.streamUrl
-        });
-        
-        // Usar o contexto para carregar a playlist
-        loadPlaylist(serverTracks);
-      } else {
-        console.log('📭 Nenhuma playlist encontrada para tela principal');
-        // Limpar playlist se não há nada salvo
-        loadPlaylist([]);
-      }
-    } catch (error) {
-      console.error('❌ Erro ao carregar playlist para MainScreen:', error);
-      loadPlaylist([]);
-    }
-  }, [loadPlaylist]);
   const fetchTimeoutRef = useRef(null);
   const seekTimeoutRef = useRef(null);
   const lastSeekPositionRef = useRef(0);
@@ -234,64 +181,18 @@ export default function MainScreen({ navigation, route }) {
     }, 100); // 100ms de debounce
   }, [fetchUserNameInternal]);
 
-  // Função para verificar se o usuário tem playlist existente
-  const checkExistingPlaylist = useCallback(async () => {
-    try {
-      setPlaylistCheckLoading(true);
-      console.log('🔍 Iniciando verificação de playlist existente...');
-      const data = await resolveCurrentUserPlaylist(1800);
-      
-      console.log('📊 Dados completos da API:', data);
-      
-      // Verificação mais rigorosa
-      const hasItems = data.items && Array.isArray(data.items) && data.items.length > 0;
-      const hasValidTracks = data.items?.every(item => item.title && item.path) || false;
-      const hasPlaylist = hasItems && hasValidTracks;
-      
-      console.log('🔍 Análise detalhada:', {
-        hasItems,
-        hasValidTracks,
-        hasPlaylist,
-        itemsCount: data.items?.length || 0,
-        items: data.items
-      });
-      
-      setHasExistingPlaylist(hasPlaylist);
-      
-      if (hasPlaylist) {
-        console.log('✅ Playlist encontrada - botão será "ALTERAR"');
-        // Carregar a playlist para a tela principal
-        loadUserPlaylistForMain();
-      } else {
-        console.log('❌ Nenhuma playlist válida - botão será "MONTAR"');
-        // Limpar playlist da tela principal
-        loadPlaylist([]);
-      }
-    } catch (error) {
-      console.log('⚠️ Erro ao verificar playlist:', error.message);
-      setHasExistingPlaylist(false);
-      console.log('❌ Erro na verificação - botão será "MONTAR"');
-    } finally {
-      setPlaylistCheckLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     fetchUserName();
-    checkExistingPlaylist();
-  }, [fetchUserName, checkExistingPlaylist]);
+  }, [fetchUserName]);
 
-  // Recarregar dados quando voltar para a tela principal
+  // Recarregar nome quando voltar da tela de edição de perfil
   useFocusEffect(
     useCallback(() => {
       // Só recarrega se o nome ainda está no estado inicial
       if (userName === 'Carregando...') {
         fetchUserName();
       }
-      // Sempre recarrega o plano e playlist quando volta para a tela principal
-      console.log('🔄 useFocusEffect: verificando plano e playlist ao voltar para MainScreen');
-      refreshPlanAndPlaylist();
-    }, [fetchUserName, userName, refreshPlanAndPlaylist])
+    }, [fetchUserName, userName])
   );
 
   // Cleanup dos timeouts quando o componente desmontar
@@ -336,28 +237,9 @@ export default function MainScreen({ navigation, route }) {
       console.log('📊 Dados da playlist recebidos:', data);
       
       const lib = Array.isArray(data?.library) ? data.library : [];
+      console.log('📚 Biblioteca processada:', lib.length, 'categorias');
       
-      // Processar categorias para usar o genre como nome
-      const processedLibrary = lib.map(category => {
-        const categoryName = category.genre || 'Categoria';
-        
-        // Criar nome mais amigável substituindo hífens e dividindo palavras
-        const friendlyName = categoryName
-          .replace(/-/g, ' ')
-          .split(' ')
-          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-          .join(' ');
-        
-        return {
-          ...category,
-          name: friendlyName,
-          originalGenre: categoryName
-        };
-      });
-      
-      console.log('📚 Biblioteca processada:', processedLibrary.length, 'categorias');
-      
-      setLibrary(processedLibrary);
+      setLibrary(lib);
     } catch (e) {
       console.error('❌ Erro ao carregar playlist:', e);
       Alert.alert('Erro', 'Não foi possível carregar a playlist.');
@@ -380,30 +262,6 @@ export default function MainScreen({ navigation, route }) {
       subscription.remove();
     };
   }, []);
-
-  // Escutar eventos de playlist salva para atualizar estado
-  useEffect(() => {
-    const handlePlaylistSaved = (data) => {
-      console.log('📥 MainScreen recebeu evento playlistSaved:', data);
-      if (data.success) {
-        // Recarregar plano e playlist após salvar
-        setTimeout(() => {
-          refreshPlanAndPlaylist();
-        }, 500); // Pequeno delay para garantir que foi salvo
-        
-        // Também recarregar a playlist para reprodução
-        setTimeout(() => {
-          loadUserPlaylistForMain();
-        }, 800); // Delay adicional para garantir que a API seja atualizada
-      }
-    };
-
-    const subscription = DeviceEventEmitter.addListener('playlistSaved', handlePlaylistSaved);
-
-    return () => {
-      subscription.remove();
-    };
-  }, [refreshPlanAndPlaylist, loadUserPlaylistForMain]);
 
   useEffect(() => () => { Player.stop(); }, []);
 
@@ -469,12 +327,6 @@ export default function MainScreen({ navigation, route }) {
           <MaterialIcons name="menu" size={24} color={C.text} onPress={() => navigation.navigate('Menu')} />
           <Text style={[styles.topTitle, { color: C.text }]}>RC PLAY</Text>
           <View style={styles.topIcons}>
-            <MaterialIcons
-              name="refresh"
-              size={24}
-              color={C.text}
-              onPress={refreshPlanAndPlaylist} 
-            />
             <Ionicons
               name={dark ? 'moon' : 'sunny-outline'}
               size={22}
@@ -500,11 +352,11 @@ export default function MainScreen({ navigation, route }) {
                 <Text style={[styles.welcomeSubtitle, { color: C.subtext }]}>{userName}</Text>
               </View>
             </View>
-            <View style={[styles.planBadge, { backgroundColor: '#0A2A54' }]}>
-              <Text style={styles.planBadgeText}>
-                {userPlan.planName || 'BASIC'}
-              </Text>
-            </View>
+              <View style={[styles.planBadge, { backgroundColor: '#0A2A54' }]}>
+                <Text style={styles.planBadgeText}>
+                  {isLoadingPlan ? 'CARREGANDO...' : `${userPlan.planName || 'BASIC'} • ${playlist.length}/${userPlan.songLimit || 10}`}
+                </Text>
+              </View>
           </View>
 
           {/* Card do Player */}
@@ -568,18 +420,11 @@ export default function MainScreen({ navigation, route }) {
                 navigation.navigate('Playlist', {
                   currentTrack: currentTrack,
                   isPlaying,
-                  customPlaylistTracks: hasExistingPlaylist ? playlist : [], // Só passa playlist se realmente tem algo montado
+                  customPlaylistTracks: playlist, // Passa as músicas já selecionadas
                 })
               }
             >
-              <Text style={[styles.secondaryBtnText, { color: C.text }]}>
-                {playlistCheckLoading 
-                  ? 'VERIFICANDO...' 
-                  : hasExistingPlaylist 
-                    ? 'ALTERAR MINHA PLAYLIST' 
-                    : 'MONTAR MINHA PLAYLIST'
-                }
-              </Text>
+              <Text style={[styles.secondaryBtnText, { color: C.text }]}>MONTAR MINHA PLAYLIST</Text>
             </Pressable>
           </View>
 

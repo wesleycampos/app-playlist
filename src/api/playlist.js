@@ -304,7 +304,7 @@ export async function saveCurrentUserPlaylist(paths) {
 }
 
 // Resolve playlist do usuário logado
-export async function resolveCurrentUserPlaylist(ttlSec = 1800) {
+export async function resolveCurrentUserPlaylist(ttlSec = 7200) {
   const userId = await getUserId();
   if (!userId) {
     throw new Error('Usuário não autenticado');
